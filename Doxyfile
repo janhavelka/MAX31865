@@ -1,9 +1,23 @@
 PROJECT_NAME           = "MAX31865"
-OUTPUT_DIRECTORY      = docs/api
-INPUT                  = include src README.md
-RECURSIVE              = YES
+PROJECT_BRIEF          = "ESP32 Arduino driver for the Maxim MAX31865 RTD-to-digital converter"
+OUTPUT_DIRECTORY       = docs/generated
+INPUT                  = README.md \
+                         docs/README.md \
+                         docs/api-overview.md \
+                         docs/repository-contract.md \
+                         docs/esp-idf-porting.md \
+                         include/MAX31865.h \
+                         include/MAX31865/Version.h \
+                         include/MAX31865/max31865_driver.h
+USE_MDFILE_AS_MAINPAGE = README.md
+FILE_PATTERNS          = *.h *.md
+RECURSIVE              = NO
+EXTRACT_ALL            = NO
+WARN_IF_UNDOCUMENTED   = YES
+WARN_AS_ERROR          = NO
+QUIET                  = YES
 GENERATE_HTML          = YES
 GENERATE_LATEX         = NO
-QUIET                  = YES
-WARN_IF_UNDOCUMENTED   = NO
-EXTRACT_ALL            = YES
+GENERATE_TREEVIEW      = YES
+SORT_MEMBER_DOCS       = YES
+JAVADOC_AUTOBRIEF      = YES

@@ -87,6 +87,6 @@ The typical operating-characteristic plots on datasheet page 6 were summarized b
 
 ## Self-Audit Notes
 
-All generated Markdown files were written from the PDFs listed in `00_document_inventory.md`. Non-PDF files in `docs/original/support/` were not used as factual sources.
+All generated Markdown files were written from the PDFs listed in `00_document_inventory.md`. Non-PDF files in `docs/vendor-reference-code/` were not used as factual sources.
 
 Every register, pin, timing value, fault bit, and conversion formula included in this extraction has a page citation. Open issues above are left unresolved where the PDFs do not provide a definitive resolution.

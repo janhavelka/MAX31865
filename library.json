@@ -1,7 +1,7 @@
 {
   "name": "MAX31865",
-  "version": "1.0.0",
-  "description": "Production-grade MAX31865 RTD-to-digital converter driver",
+  "version": "0.1.2",
+  "description": "MAX31865 RTD-to-digital converter driver for ESP32 Arduino with diagnostics and bringup CLI",
   "keywords": [
     "max31865",
     "rtd",
@@ -16,11 +16,6 @@
     {
       "name": "Thymos Solution s.r.o",
       "email": "info@thymos.cz",
-      "url": "https://www.thymos.cz"
-    },
-    {
-      "name": "Jan Havelka",
-      "email": "info@thymos.cz",
       "url": "https://www.thymos.cz",
       "maintainer": true
     }
@@ -30,7 +25,7 @@
     "url": "https://github.com/janhavelka/MAX31865.git"
   },
   "license": "MIT",
-  "homepage": "https://www.thymos.cz",
+  "homepage": "https://github.com/janhavelka/MAX31865",
   "frameworks": [
     "arduino"
   ],
@@ -38,7 +33,7 @@
     "espressif32"
   ],
   "headers": [
-    "MAX31865/MAX31865.h"
+    "MAX31865.h"
   ],
   "build": {
     "includeDir": "include",

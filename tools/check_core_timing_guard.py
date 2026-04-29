@@ -1,16 +1,68 @@
 #!/usr/bin/env python3
-"""Check that MAX31865 timing constants remain conservative."""
+from __future__ import annotations
 
-from pathlib import Path
+import pathlib
 import re
 import sys
+from typing import Dict
+
+ROOT = pathlib.Path(__file__).resolve().parents[1]
+SCAN_DIRS = ("src", "include")
+VALID_SUFFIXES = {".c", ".cc", ".cpp", ".h", ".hpp"}
+
+FORBIDDEN_CALLS = {
+    "millis": re.compile(r"\bmillis\s*\("),
+    "micros": re.compile(r"\bmicros\s*\("),
+    "delay": re.compile(r"\bdelay\s*\("),
+    "delayMicroseconds": re.compile(r"\bdelayMicroseconds\s*\("),
+    "yield": re.compile(r"\byield\s*\("),
+}
+
+INCLUDE_ARDUINO_RE = re.compile(r'^\s*#\s*include\s*[<"]Arduino\.h[>"]', re.MULTILINE)
+BLOCK_COMMENT_RE = re.compile(r"/\*.*?\*/", re.DOTALL)
+LINE_COMMENT_RE = re.compile(r"//[^\n]*")
+STRING_RE = re.compile(r'"(?:\\.|[^"\\])*"|\'(?:\\.|[^\'\\])*\'')
+
+ALLOWED_CALL_COUNTS: Dict[str, Dict[str, int]] = {
+    "src/MAX31865.cpp": {
+        "millis": 1,
+        "delay": 1,
+        "delayMicroseconds": 1,
+        "yield": 2,
+    },
+}
+ALLOWED_INCLUDE_COUNTS: Dict[str, int] = {
+    "include/MAX31865.h": 1,
+}
+
+TIMING_MINIMUMS = {
+    "SINGLE_CONVERSION_60HZ_MS": 55,
+    "SINGLE_CONVERSION_50HZ_MS": 66,
+    "CONTINUOUS_CONVERSION_60HZ_MS": 18,
+    "CONTINUOUS_CONVERSION_50HZ_MS": 21,
+    "AUTO_FAULT_DETECTION_MAX_US": 600,
+}
 
 
-ROOT = Path(__file__).resolve().parents[1]
-COMMAND_TABLE = ROOT / "include" / "MAX31865" / "CommandTable.h"
+def strip_non_code(text: str) -> str:
+    text = BLOCK_COMMENT_RE.sub("", text)
+    text = LINE_COMMENT_RE.sub("", text)
+    return STRING_RE.sub('""', text)
 
 
-def value(name: str, text: str) -> int:
+def collect_sources() -> list[pathlib.Path]:
+    files: list[pathlib.Path] = []
+    for dirname in SCAN_DIRS:
+        root = ROOT / dirname
+        if not root.exists():
+            continue
+        for path in root.rglob("*"):
+            if path.is_file() and path.suffix.lower() in VALID_SUFFIXES:
+                files.append(path)
+    return files
+
+
+def constant_value(name: str, text: str) -> int:
     match = re.search(rf"{name}\s*=\s*(\d+)", text)
     if not match:
         raise ValueError(f"Missing {name}")
@@ -18,20 +70,83 @@ def value(name: str, text: str) -> int:
 
 
 def main() -> int:
-    text = COMMAND_TABLE.read_text(encoding="utf-8")
-    checks = {
-        "SINGLE_CONVERSION_60HZ_MS": 55,
-        "SINGLE_CONVERSION_50HZ_MS": 66,
-        "CONTINUOUS_CONVERSION_60HZ_MS": 18,
-        "CONTINUOUS_CONVERSION_50HZ_MS": 21,
-        "AUTO_FAULT_DETECTION_MAX_US": 600,
-    }
-    failures = [name for name, minimum in checks.items() if value(name, text) < minimum]
-    if failures:
-      print("Timing constants are below datasheet max: " + ", ".join(failures), file=sys.stderr)
-      return 1
+    observed_calls: Dict[str, Dict[str, int]] = {}
+    observed_includes: Dict[str, int] = {}
+
+    for path in collect_sources():
+        rel = path.relative_to(ROOT).as_posix()
+        raw = path.read_text(encoding="utf-8", errors="replace")
+        code = strip_non_code(raw)
+
+        call_counts: Dict[str, int] = {}
+        for call_name, pattern in FORBIDDEN_CALLS.items():
+            count = len(pattern.findall(code))
+            if count > 0:
+                call_counts[call_name] = count
+        if call_counts:
+            observed_calls[rel] = call_counts
+
+        include_count = len(INCLUDE_ARDUINO_RE.findall(raw))
+        if include_count > 0:
+            observed_includes[rel] = include_count
+
+    errors: list[str] = []
+
+    for rel, counts in observed_calls.items():
+        if rel not in ALLOWED_CALL_COUNTS:
+            errors.append(f"forbidden timing calls in unexpected file: {rel} -> {counts}")
+            continue
+        expected = ALLOWED_CALL_COUNTS[rel]
+        for call_name, count in counts.items():
+            exp = expected.get(call_name, 0)
+            if count != exp:
+                errors.append(
+                    f"timing call count mismatch in {rel}: {call_name} observed={count}, expected={exp}"
+                )
+
+    for rel, expected in ALLOWED_CALL_COUNTS.items():
+        observed = observed_calls.get(rel, {})
+        if rel not in observed_calls:
+            for call_name, exp in expected.items():
+                if exp != 0:
+                    errors.append(
+                        f"timing call count mismatch in {rel}: {call_name} observed=0, expected={exp}"
+                    )
+        unexpected_calls = set(observed.keys()) - set(expected.keys())
+        if unexpected_calls:
+            errors.append(f"unexpected timing call types in {rel}: {sorted(unexpected_calls)}")
+
+    for rel, count in observed_includes.items():
+        exp = ALLOWED_INCLUDE_COUNTS.get(rel, 0)
+        if count != exp:
+            errors.append(
+                f"Arduino include count mismatch in {rel}: observed={count}, expected={exp}"
+            )
+
+    for rel, exp in ALLOWED_INCLUDE_COUNTS.items():
+        obs = observed_includes.get(rel, 0)
+        if obs != exp:
+            errors.append(
+                f"Arduino include count mismatch in {rel}: observed={obs}, expected={exp}"
+            )
+
+    timing_text = (ROOT / "include" / "MAX31865" / "max31865_driver.h").read_text(
+        encoding="utf-8",
+        errors="replace",
+    )
+    for name, minimum in TIMING_MINIMUMS.items():
+        if constant_value(name, timing_text) < minimum:
+            errors.append(f"timing constant below datasheet max: {name}")
+
+    if errors:
+        print("Core timing guard FAILED:")
+        for err in errors:
+            print(f"- {err}")
+        return 1
+
+    print("Core timing guard PASSED")
     return 0
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    sys.exit(main())
