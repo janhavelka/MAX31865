@@ -1,0 +1,9 @@
+PROJECT_NAME           = "MAX31865"
+OUTPUT_DIRECTORY      = docs/api
+INPUT                  = include src README.md
+RECURSIVE              = YES
+GENERATE_HTML          = YES
+GENERATE_LATEX         = NO
+QUIET                  = YES
+WARN_IF_UNDOCUMENTED   = NO
+EXTRACT_ALL            = YES

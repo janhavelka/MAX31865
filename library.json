@@ -1,0 +1,47 @@
+{
+  "name": "MAX31865",
+  "version": "1.0.0",
+  "description": "Production-grade MAX31865 RTD-to-digital converter driver",
+  "keywords": [
+    "max31865",
+    "rtd",
+    "pt100",
+    "pt1000",
+    "temperature",
+    "spi",
+    "arduino",
+    "esp32"
+  ],
+  "authors": [
+    {
+      "name": "Thymos Solution s.r.o",
+      "email": "info@thymos.cz",
+      "url": "https://www.thymos.cz"
+    },
+    {
+      "name": "Jan Havelka",
+      "email": "info@thymos.cz",
+      "url": "https://www.thymos.cz",
+      "maintainer": true
+    }
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/janhavelka/MAX31865.git"
+  },
+  "license": "MIT",
+  "homepage": "https://www.thymos.cz",
+  "frameworks": [
+    "arduino"
+  ],
+  "platforms": [
+    "espressif32"
+  ],
+  "headers": [
+    "MAX31865/MAX31865.h"
+  ],
+  "build": {
+    "includeDir": "include",
+    "srcDir": "src"
+  }
+}
