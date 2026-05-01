@@ -36,7 +36,12 @@ struct Snapshot {
   uint32_t totalFailures = 0;
   uint32_t totalSuccess = 0;
   uint32_t spiErrors = 0;
+  uint32_t lockTimeouts = 0;
+  uint32_t referenceAlarms = 0;
   uint32_t drdyTimeouts = 0;
+  size_t dropped = 0;
+  size_t overruns = 0;
+  size_t depth = 0;
   uint32_t faultStatus = 0;
 
   void capture(const MAX31865& rtd) {
@@ -49,7 +54,12 @@ struct Snapshot {
     totalFailures = health.total_failures;
     totalSuccess = health.total_success;
     spiErrors = health.spi_error_count;
+    lockTimeouts = health.spi_lock_timeout_count;
+    referenceAlarms = health.reference_alarm_count;
     drdyTimeouts = health.drdy_timeout_count;
+    dropped = health.dropped_count;
+    overruns = health.overrun_count;
+    depth = health.buffer_depth;
     faultStatus = health.last_fault_status;
   }
 };
@@ -81,12 +91,18 @@ inline void printHealthView(const MAX31865& rtd) {
                 cli::successRateColor(pct),
                 pct,
                 colorReset());
-  Serial.printf("RTD: lifecycle=%s err=%s reads=%lu kept=%lu spi=%lu drdy_timeout=%lu fault=0x%02X age_us=%lu auto=%s\n",
+  Serial.printf("RTD: lifecycle=%s err=%s depth=%u/%u dropped=%lu overrun=%lu reads=%lu kept=%lu spi=%lu lock=%lu ref=%lu timeout=%lu fault=0x%02X age_us=%lu auto=%s\n",
                 max31865StateName(health.state),
                 max31865ErrorName(health.last_error),
+                static_cast<unsigned int>(health.buffer_depth),
+                static_cast<unsigned int>(health.buffer_capacity),
+                static_cast<unsigned long>(health.dropped_count),
+                static_cast<unsigned long>(health.overrun_count),
                 static_cast<unsigned long>(health.total_read_count),
                 static_cast<unsigned long>(health.kept_sample_count),
                 static_cast<unsigned long>(health.spi_error_count),
+                static_cast<unsigned long>(health.spi_lock_timeout_count),
+                static_cast<unsigned long>(health.reference_alarm_count),
                 static_cast<unsigned long>(health.drdy_timeout_count),
                 static_cast<unsigned>(health.last_fault_status),
                 static_cast<unsigned long>(health.last_sample_age_us),
@@ -121,20 +137,65 @@ inline void printHealthDiff(const Snapshot& before, const Snapshot& after) {
                   max31865ErrorName(after.lastError));
     changed = true;
   }
-  if ((before.totalSuccess != after.totalSuccess) ||
-      (before.totalFailures != after.totalFailures) ||
-      (before.spiErrors != after.spiErrors) ||
-      (before.drdyTimeouts != after.drdyTimeouts) ||
-      (before.faultStatus != after.faultStatus)) {
-    Serial.printf("  Counters: ok %lu->%lu, fail %lu->%lu, spi %lu->%lu, timeout %lu->%lu, fault 0x%02lX->0x%02lX\n",
+  if (before.online != after.online) {
+    Serial.printf("  Online: %s%s%s -> %s%s%s\n",
+                  boolColor(before.online),
+                  before.online ? "true" : "false",
+                  colorReset(),
+                  boolColor(after.online),
+                  after.online ? "true" : "false",
+                  colorReset());
+    changed = true;
+  }
+  if (before.consecutiveFailures != after.consecutiveFailures) {
+    Serial.printf("  ConsecFail: %s%u -> %u%s\n",
+                  failureColor(static_cast<uint32_t>(after.consecutiveFailures)),
+                  static_cast<unsigned>(before.consecutiveFailures),
+                  static_cast<unsigned>(after.consecutiveFailures),
+                  colorReset());
+    changed = true;
+  }
+  if (before.totalSuccess != after.totalSuccess) {
+    Serial.printf("  TotalOK: %lu -> %s%lu (+%lu)%s\n",
                   static_cast<unsigned long>(before.totalSuccess),
+                  colorGreen(),
                   static_cast<unsigned long>(after.totalSuccess),
+                  static_cast<unsigned long>(after.totalSuccess - before.totalSuccess),
+                  colorReset());
+    changed = true;
+  }
+  if (before.totalFailures != after.totalFailures) {
+    Serial.printf("  TotalFail: %lu -> %s%lu (+%lu)%s\n",
                   static_cast<unsigned long>(before.totalFailures),
+                  colorRed(),
                   static_cast<unsigned long>(after.totalFailures),
+                  static_cast<unsigned long>(after.totalFailures - before.totalFailures),
+                  colorReset());
+    changed = true;
+  }
+  if ((before.spiErrors != after.spiErrors) ||
+      (before.lockTimeouts != after.lockTimeouts) ||
+      (before.referenceAlarms != after.referenceAlarms) ||
+      (before.drdyTimeouts != after.drdyTimeouts) ||
+      (before.dropped != after.dropped) ||
+      (before.overruns != after.overruns) ||
+      (before.depth != after.depth) ||
+      (before.faultStatus != after.faultStatus)) {
+    Serial.printf("  Counters: spi %lu->%lu, lock %lu->%lu, ref %lu->%lu, timeout %lu->%lu, dropped %lu->%lu, overrun %lu->%lu, depth %lu->%lu, fault 0x%02lX->0x%02lX\n",
                   static_cast<unsigned long>(before.spiErrors),
                   static_cast<unsigned long>(after.spiErrors),
+                  static_cast<unsigned long>(before.lockTimeouts),
+                  static_cast<unsigned long>(after.lockTimeouts),
+                  static_cast<unsigned long>(before.referenceAlarms),
+                  static_cast<unsigned long>(after.referenceAlarms),
                   static_cast<unsigned long>(before.drdyTimeouts),
                   static_cast<unsigned long>(after.drdyTimeouts),
+                  static_cast<unsigned long>(before.dropped),
+                  static_cast<unsigned long>(after.dropped),
+                  static_cast<unsigned long>(before.overruns),
+                  static_cast<unsigned long>(after.overruns),
+                  static_cast<unsigned long>(before.depth),
+                  static_cast<unsigned long>(after.depth),
                   static_cast<unsigned long>(before.faultStatus),
                   static_cast<unsigned long>(after.faultStatus));
     changed = true;

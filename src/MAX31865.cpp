@@ -23,6 +23,29 @@ bool validFilter(MAX31865Filter filter) {
     return filter == MAX31865Filter::Hz60 || filter == MAX31865Filter::Hz50;
 }
 
+bool validReferenceResistor(float ohms) {
+    return isfinite(ohms) &&
+           ohms >= max31865_cmd::REFERENCE_RESISTOR_MIN_OHMS &&
+           ohms <= max31865_cmd::REFERENCE_RESISTOR_MAX_OHMS;
+}
+
+uint32_t normalizedSpiHz(uint32_t spiHz) {
+    if (spiHz == 0U) {
+        return MAX31865_DEFAULT_SPI_HZ;
+    }
+    return (spiHz > max31865_cmd::SPI_MAX_HZ) ? max31865_cmd::SPI_MAX_HZ : spiHz;
+}
+
+uint8_t verifyMaskForRegister(uint8_t addr) {
+    if (addr == max31865_cmd::REG_CONFIG) {
+        return max31865_cmd::CONFIG_BIAS |
+               max31865_cmd::CONFIG_AUTO |
+               max31865_cmd::CONFIG_3WIRE |
+               max31865_cmd::CONFIG_FILTER_50HZ;
+    }
+    return 0xFF;
+}
+
 uint16_t clampCode(uint32_t code) {
     return (code > max31865_cmd::ADC_CODE_MAX)
                ? max31865_cmd::ADC_CODE_MAX
@@ -79,7 +102,10 @@ const char* max31865ErrorName(MAX31865Error error) {
         case MAX31865Error::NotInitialized: return "NotInitialized";
         case MAX31865Error::InvalidArgument: return "InvalidArgument";
         case MAX31865Error::InvalidConfig: return "InvalidConfig";
+        case MAX31865Error::ResourceAllocationFailed: return "ResourceAllocationFailed";
+        case MAX31865Error::SpiLockTimeout: return "SpiLockTimeout";
         case MAX31865Error::SpiTransferFailed: return "SpiTransferFailed";
+        case MAX31865Error::RegisterVerifyFailed: return "RegisterVerifyFailed";
         case MAX31865Error::DeviceNotFound: return "DeviceNotFound";
         case MAX31865Error::ConversionNotReady: return "ConversionNotReady";
         case MAX31865Error::Timeout: return "Timeout";
@@ -92,7 +118,9 @@ const char* max31865ErrorName(MAX31865Error error) {
 MAX31865::MAX31865()
     : _spi(nullptr),
       _spiSettings(MAX31865_DEFAULT_SPI_HZ, MSBFIRST, SPI_MODE1),
+      _spiMutex(nullptr),
       _spiHz(MAX31865_DEFAULT_SPI_HZ),
+      _spiLockTimeoutMs(MAX31865_SPI_LOCK_TIMEOUT_MS),
       _csPin(-1),
       _drdyPin(-1),
       _initialized(false),
@@ -116,6 +144,7 @@ MAX31865::MAX31865()
       _clearFaultsBeforeOneShot(true),
       _disableBiasAfterOneShot(true),
       _conversionStarted(false),
+      _autoFirstConversionPending(false),
       _sampleAvailable(false),
       _conversionStartMs(0),
       _sampleCounter(0),
@@ -126,8 +155,11 @@ MAX31865::MAX31865()
       _keptSampleCount(0),
       _droppedCount(0),
       _overrunCount(0),
+      _queueHighWater(0),
       _spiErrorCount(0),
       _drdyTimeoutCount(0),
+      _spiLockTimeoutCount(0),
+      _referenceAlarmCount(0),
       _lastFaultStatus(0) {}
 
 MAX31865::~MAX31865() {
@@ -140,10 +172,16 @@ bool MAX31865::begin(const MAX31865BeginConfig& config) {
         return false;
     }
     if (!validWireMode(config.wireMode) || !validFilter(config.filter) ||
-        !isfinite(config.referenceResistorOhms) ||
+        !validReferenceResistor(config.referenceResistorOhms) ||
         !isfinite(config.rtdNominalOhms) ||
-        config.referenceResistorOhms <= 0.0f ||
         config.rtdNominalOhms <= 0.0f) {
+        setFault(MAX31865Error::InvalidConfig);
+        return false;
+    }
+    if (config.useCustomCoefficients &&
+        (!isfinite(config.coefficients.a) || !isfinite(config.coefficients.b) ||
+         !isfinite(config.coefficients.c) || config.coefficients.a == 0.0f ||
+         config.coefficients.b == 0.0f)) {
         setFault(MAX31865Error::InvalidConfig);
         return false;
     }
@@ -151,18 +189,34 @@ bool MAX31865::begin(const MAX31865BeginConfig& config) {
     setState(MAX31865State::Configuring);
     setLastError(MAX31865Error::Ok);
 
+    if (_spiMutex == nullptr) {
+        _spiMutex = xSemaphoreCreateMutex();
+        if (_spiMutex == nullptr) {
+            setFault(MAX31865Error::ResourceAllocationFailed);
+            return false;
+        }
+    }
+
     _spi = config.spi;
-    _spiHz = (config.spiHz == 0U) ? MAX31865_DEFAULT_SPI_HZ : config.spiHz;
+    _spiHz = normalizedSpiHz(config.spiHz);
     _spiSettings = SPISettings(_spiHz, MSBFIRST, SPI_MODE1);
     _csPin = config.pins.cs;
     _drdyPin = config.pins.drdy;
     _referenceResistorOhms = config.referenceResistorOhms;
     _rtdNominalOhms = config.rtdNominalOhms;
+    if (config.useCustomCoefficients) {
+        _coefficients = config.coefficients;
+    } else {
+        _coefficients = {3.90830e-3f, -5.77500e-7f, -4.18301e-12f};
+    }
     _inputFilterTimeConstantUs = config.inputFilterTimeConstantUs;
     _wireMode = config.wireMode;
     _filter = config.filter;
     _biasEnabled = false;
     _autoConvert = false;
+    _autoFirstConversionPending = false;
+    _conversionStarted = false;
+    _sampleAvailable = false;
 
     _spi->begin(config.pins.sck, config.pins.miso, config.pins.mosi, config.pins.cs);
     pinMode(_csPin, OUTPUT);
@@ -174,12 +228,28 @@ bool MAX31865::begin(const MAX31865BeginConfig& config) {
     _initialized = true;
     if (!applyConfig()) {
         _initialized = false;
+        _driverState = MAX31865DriverState::UNINIT;
+        _spi = nullptr;
+        if (_spiMutex != nullptr) {
+            vSemaphoreDelete(_spiMutex);
+            _spiMutex = nullptr;
+        }
         setFault(MAX31865Error::SpiTransferFailed);
         return false;
     }
-    if (config.verifyProbe && !probe().ok()) {
-        _initialized = false;
-        return false;
+    if (config.verifyProbe) {
+        const MAX31865Status probeStatus = probe();
+        if (!probeStatus.ok()) {
+            _initialized = false;
+            _driverState = MAX31865DriverState::UNINIT;
+            _spi = nullptr;
+            if (_spiMutex != nullptr) {
+                vSemaphoreDelete(_spiMutex);
+                _spiMutex = nullptr;
+            }
+            setFault(probeStatus.code);
+            return false;
+        }
     }
 
     setState(MAX31865State::Ready);
@@ -217,27 +287,25 @@ void MAX31865::end() {
     _state = MAX31865State::Uninitialized;
     _driverState = MAX31865DriverState::UNINIT;
     _conversionStarted = false;
+    _autoFirstConversionPending = false;
     _sampleAvailable = false;
     _biasEnabled = false;
     _autoConvert = false;
+    if (_spiMutex != nullptr) {
+        vSemaphoreDelete(_spiMutex);
+        _spiMutex = nullptr;
+    }
 }
 
 void MAX31865::tick(uint32_t nowMs) {
     if (!_initialized) {
         return;
     }
-    if (_conversionStarted &&
-        (nowMs - _conversionStartMs) >= getSingleConversionTimeMs()) {
-        _conversionStarted = false;
+    const uint32_t readyMs = (_autoConvert && !_autoFirstConversionPending)
+                                 ? getContinuousConversionTimeMs()
+                                 : getSingleConversionTimeMs();
+    if (_conversionStarted && (nowMs - _conversionStartMs) >= readyMs) {
         _sampleAvailable = true;
-        if (!_autoConvert) {
-            setState(MAX31865State::Ready);
-        }
-    }
-    if (_autoConvert &&
-        (nowMs - _conversionStartMs) >= getContinuousConversionTimeMs()) {
-        _sampleAvailable = true;
-        _conversionStartMs = nowMs;
     }
 }
 
@@ -255,6 +323,10 @@ MAX31865Status MAX31865::lastOperationStatus() const {
 
 void MAX31865::setOfflineThreshold(uint8_t threshold) {
     _offlineThreshold = (threshold == 0U) ? 1U : threshold;
+}
+
+void MAX31865::setSpiLockTimeoutMs(uint32_t timeoutMs) {
+    _spiLockTimeoutMs = (timeoutMs == 0U) ? MAX31865_SPI_LOCK_TIMEOUT_MS : timeoutMs;
 }
 
 MAX31865Health MAX31865::health() const {
@@ -278,9 +350,11 @@ MAX31865Health MAX31865::health() const {
     out.overrun_count = _overrunCount;
     out.buffer_depth = _sampleAvailable ? 1U : 0U;
     out.buffer_capacity = 1U;
-    out.queue_high_water = (_keptSampleCount > 0U) ? 1U : 0U;
+    out.queue_high_water = _queueHighWater;
     out.spi_error_count = _spiErrorCount;
+    out.reference_alarm_count = _referenceAlarmCount;
     out.drdy_timeout_count = _drdyTimeoutCount;
+    out.spi_lock_timeout_count = _spiLockTimeoutCount;
     out.last_sample_timestamp_us = _lastSampleTimestampMs * 1000U;
     out.last_sample_age_us = (_lastSampleTimestampMs == 0U)
                                  ? 0U
@@ -296,8 +370,12 @@ void MAX31865::clearHealthCounters() {
     _keptSampleCount = 0;
     _droppedCount = 0;
     _overrunCount = 0;
+    _queueHighWater = 0;
     _spiErrorCount = 0;
     _drdyTimeoutCount = 0;
+    _spiLockTimeoutCount = 0;
+    _referenceAlarmCount = 0;
+    _lastFaultStatus = 0;
 }
 
 MAX31865Status MAX31865::probe() {
@@ -305,14 +383,36 @@ MAX31865Status MAX31865::probe() {
         return MAX31865Status::Error(MAX31865Error::NotInitialized, "Driver not initialized");
     }
     uint8_t config = 0;
-    if (!readRegister(max31865_cmd::REG_CONFIG, config)) {
+    if (!readRegisterNoHealth(max31865_cmd::REG_CONFIG, config)) {
         return MAX31865Status::Error(MAX31865Error::DeviceNotFound,
                                      "MAX31865 not responding");
     }
     if (config == 0xFF) {
-        recordFailure(MAX31865Error::DeviceNotFound);
         return MAX31865Status::Error(MAX31865Error::DeviceNotFound,
                                      "All-ones config read", config);
+    }
+    uint8_t saved = 0;
+    if (!readRegisterNoHealth(max31865_cmd::REG_LOW_FAULT_LSB, saved)) {
+        return MAX31865Status::Error(MAX31865Error::DeviceNotFound,
+                                     "Threshold read failed");
+    }
+    const uint8_t pattern = static_cast<uint8_t>((saved ^ 0xA8U) & 0xFEU);
+    if (!writeRegisterNoHealth(max31865_cmd::REG_LOW_FAULT_LSB, pattern)) {
+        return MAX31865Status::Error(MAX31865Error::DeviceNotFound,
+                                     "Threshold write failed");
+    }
+    uint8_t verify = 0;
+    const bool readBackOk = readRegisterNoHealth(max31865_cmd::REG_LOW_FAULT_LSB, verify);
+    const bool restoreOk = writeRegisterNoHealth(max31865_cmd::REG_LOW_FAULT_LSB, saved);
+    if (!restoreOk) {
+        return MAX31865Status::Error(MAX31865Error::SpiTransferFailed,
+                                     "Threshold restore failed",
+                                     static_cast<int32_t>(verify));
+    }
+    if (!readBackOk || verify != pattern) {
+        return MAX31865Status::Error(MAX31865Error::DeviceNotFound,
+                                     "Threshold readback mismatch",
+                                     static_cast<int32_t>(verify));
     }
     return MAX31865Status::Ok();
 }
@@ -331,8 +431,32 @@ MAX31865Status MAX31865::recover() {
 }
 
 void MAX31865::setSpiHz(uint32_t spiHz) {
-    _spiHz = (spiHz == 0U) ? MAX31865_DEFAULT_SPI_HZ : spiHz;
+    _spiHz = normalizedSpiHz(spiHz);
     _spiSettings = SPISettings(_spiHz, MSBFIRST, SPI_MODE1);
+}
+
+bool MAX31865::setRtdParameters(float referenceResistorOhms,
+                                float rtdNominalOhms,
+                                const MAX31865RtdCoefficients* coefficients) {
+    if (!validReferenceResistor(referenceResistorOhms) ||
+        !isfinite(rtdNominalOhms) || rtdNominalOhms <= 0.0f) {
+        setFault(MAX31865Error::InvalidArgument);
+        return false;
+    }
+    if (coefficients != nullptr &&
+        (!isfinite(coefficients->a) || !isfinite(coefficients->b) ||
+         !isfinite(coefficients->c) || coefficients->a == 0.0f ||
+         coefficients->b == 0.0f)) {
+        setFault(MAX31865Error::InvalidArgument);
+        return false;
+    }
+    _referenceResistorOhms = referenceResistorOhms;
+    _rtdNominalOhms = rtdNominalOhms;
+    if (coefficients != nullptr) {
+        _coefficients = *coefficients;
+    }
+    setLastError(MAX31865Error::Ok);
+    return true;
 }
 
 bool MAX31865::setBias(bool enable) {
@@ -357,6 +481,14 @@ bool MAX31865::setAutoConvert(bool enable) {
         setFault(MAX31865Error::NotInitialized);
         return false;
     }
+    if (enable && !_biasEnabled) {
+        uint8_t biasOnly = buildConfigByte(_wireMode, _filter, true, false);
+        if (!writeRegister(max31865_cmd::REG_CONFIG, biasOnly)) {
+            return false;
+        }
+        _biasEnabled = true;
+        delayUs(getBiasSettleTimeUs());
+    }
     uint8_t config = buildConfigByte(_wireMode, _filter, enable || _biasEnabled, enable);
     if (!writeRegister(max31865_cmd::REG_CONFIG, config)) {
         return false;
@@ -365,10 +497,13 @@ bool MAX31865::setAutoConvert(bool enable) {
     if (enable) {
         _biasEnabled = true;
         _conversionStarted = true;
+        _autoFirstConversionPending = true;
+        _sampleAvailable = false;
         _conversionStartMs = nowMs();
         setState(MAX31865State::Converting);
     } else {
         _conversionStarted = false;
+        _autoFirstConversionPending = false;
         _sampleAvailable = false;
         setState(MAX31865State::Ready);
     }
@@ -384,8 +519,20 @@ bool MAX31865::setWireMode(MAX31865WireMode mode) {
         setFault(MAX31865Error::InvalidArgument);
         return false;
     }
+    if (!_initialized) {
+        setFault(MAX31865Error::NotInitialized);
+        return false;
+    }
+    if (_autoConvert) {
+        setFault(MAX31865Error::Busy);
+        return false;
+    }
+    const uint8_t config = buildConfigByte(mode, _filter, _biasEnabled, false);
+    if (!writeRegister(max31865_cmd::REG_CONFIG, config)) {
+        return false;
+    }
     _wireMode = mode;
-    return applyConfig();
+    return true;
 }
 
 bool MAX31865::setFilter(MAX31865Filter filter) {
@@ -393,12 +540,20 @@ bool MAX31865::setFilter(MAX31865Filter filter) {
         setFault(MAX31865Error::InvalidArgument);
         return false;
     }
+    if (!_initialized) {
+        setFault(MAX31865Error::NotInitialized);
+        return false;
+    }
     if (_autoConvert) {
         setFault(MAX31865Error::Busy);
         return false;
     }
+    const uint8_t config = buildConfigByte(_wireMode, filter, _biasEnabled, false);
+    if (!writeRegister(max31865_cmd::REG_CONFIG, config)) {
+        return false;
+    }
     _filter = filter;
-    return applyConfig();
+    return true;
 }
 
 bool MAX31865::configureMeasurement(MAX31865WireMode wireMode,
@@ -408,15 +563,20 @@ bool MAX31865::configureMeasurement(MAX31865WireMode wireMode,
         setFault(MAX31865Error::InvalidArgument);
         return false;
     }
+    if (!_initialized) {
+        setFault(MAX31865Error::NotInitialized);
+        return false;
+    }
     const bool wasAuto = _autoConvert;
     if (wasAuto && !setAutoConvert(false)) {
         return false;
     }
-    _wireMode = wireMode;
-    _filter = filter;
-    if (!applyConfig()) {
+    const uint8_t config = buildConfigByte(wireMode, filter, _biasEnabled, false);
+    if (!writeRegister(max31865_cmd::REG_CONFIG, config)) {
         return false;
     }
+    _wireMode = wireMode;
+    _filter = filter;
     return setAutoConvert(autoConvert);
 }
 
@@ -440,6 +600,9 @@ bool MAX31865::readSingle(MAX31865Sample& out, uint32_t timeoutMs) {
     uint8_t config = buildConfigByte(_wireMode, _filter, true, false);
     config |= max31865_cmd::CONFIG_ONE_SHOT;
     if (!writeRegister(max31865_cmd::REG_CONFIG, config)) {
+        if (_disableBiasAfterOneShot && !_autoConvert) {
+            (void)setBias(false);
+        }
         return false;
     }
 
@@ -461,19 +624,33 @@ bool MAX31865::readSingle(MAX31865Sample& out, uint32_t timeoutMs) {
     }
 
     _conversionStarted = false;
+    _autoFirstConversionPending = false;
     _sampleAvailable = false;
-    _drdyTimeoutCount++;
     recordFailure(MAX31865Error::Timeout);
     setState(MAX31865State::Ready);
+    if (_disableBiasAfterOneShot && !_autoConvert) {
+        (void)setBias(false);
+    }
     return false;
 }
 
 bool MAX31865::poll(MAX31865Sample& out) {
     if (!conversionReady()) {
-        setLastError(MAX31865Error::ConversionNotReady);
         return false;
     }
     return readSample(out);
+}
+
+MAX31865Status MAX31865::readIfReady(MAX31865Sample& out) {
+    if (!_initialized) {
+        return MAX31865Status::Error(MAX31865Error::NotInitialized, "Driver not initialized");
+    }
+    if (!conversionReady()) {
+        return MAX31865Status::Error(MAX31865Error::ConversionNotReady, "Conversion not ready");
+    }
+    return readSample(out)
+               ? MAX31865Status::Ok()
+               : lastOperationStatus();
 }
 
 bool MAX31865::readSample(MAX31865Sample& out) {
@@ -501,13 +678,30 @@ bool MAX31865::readSample(MAX31865Sample& out) {
     out.fault_status = {};
     if (raw.fault) {
         out.has_fault_status = readFaultStatus(out.fault_status);
+        _droppedCount++;
+        recordFailure(MAX31865Error::FaultPresent);
+        _conversionStarted = _autoConvert;
+        _autoFirstConversionPending = false;
+        _sampleAvailable = false;
+        if (_autoConvert) {
+            _conversionStartMs = nowMs();
+            setState(MAX31865State::Converting);
+        } else {
+            setState(MAX31865State::Ready);
+        }
+        return false;
     }
 
-    _conversionStarted = false;
-    _sampleAvailable = _autoConvert;
     if (_autoConvert) {
+        _conversionStarted = true;
+        _autoFirstConversionPending = false;
+        _sampleAvailable = false;
         _conversionStartMs = nowMs();
+        setState(MAX31865State::Converting);
     } else {
+        _conversionStarted = false;
+        _autoFirstConversionPending = false;
+        _sampleAvailable = false;
         setState(MAX31865State::Ready);
     }
     return cacheSample(out);
@@ -544,12 +738,17 @@ bool MAX31865::readTemperature(float& celsius) {
 }
 
 bool MAX31865::readFaultStatus(MAX31865FaultStatus& out) {
-    uint8_t raw = readReg(max31865_cmd::REG_FAULT_STATUS);
-    if (_lastError != MAX31865Error::Ok) {
+    uint8_t raw = 0;
+    if (!readReg(max31865_cmd::REG_FAULT_STATUS, raw)) {
         return false;
     }
     decodeFaultStatus(raw, out);
     _lastFaultStatus = out.raw;
+    if (out.refin_high || out.refin_low) {
+        if (_referenceAlarmCount < UINT32_MAX) {
+            _referenceAlarmCount++;
+        }
+    }
     return true;
 }
 
@@ -566,24 +765,41 @@ bool MAX31865::clearFaults() {
 }
 
 bool MAX31865::runAutoFaultDetection(MAX31865FaultStatus& out, uint32_t timeoutMs) {
+    if (_autoConvert || _conversionStarted) {
+        setFault(MAX31865Error::Busy);
+        return false;
+    }
     if (!setBias(true)) {
         return false;
     }
+    delayUs(getBiasSettleTimeUs());
     uint8_t config = buildConfigByte(_wireMode, _filter, true, false);
     config |= max31865_cmd::CONFIG_FAULT_CYCLE_AUTO;
     if (!writeRegister(max31865_cmd::REG_CONFIG, config)) {
         return false;
     }
     delayUs(max31865_cmd::AUTO_FAULT_DETECTION_MAX_US);
-    return waitForFaultCycleDone(timeoutMs) && readFaultStatus(out);
+    _autoConvert = false;
+    _conversionStarted = false;
+    _autoFirstConversionPending = false;
+    _sampleAvailable = false;
+    const bool ok = waitForFaultCycleDone(timeoutMs) && readFaultStatus(out);
+    delayUs(getBiasSettleTimeUs());
+    setState(MAX31865State::Ready);
+    return ok;
 }
 
 bool MAX31865::runManualFaultDetection(MAX31865FaultStatus& out,
                                        uint32_t settleDelayUs,
                                        uint32_t timeoutMs) {
+    if (_autoConvert || _conversionStarted) {
+        setFault(MAX31865Error::Busy);
+        return false;
+    }
     if (!setBias(true)) {
         return false;
     }
+    delayUs(getBiasSettleTimeUs());
     delayUs(settleDelayUs);
     uint8_t config = buildConfigByte(_wireMode, _filter, true, false);
     config |= max31865_cmd::CONFIG_FAULT_CYCLE_MANUAL_1;
@@ -597,7 +813,14 @@ bool MAX31865::runManualFaultDetection(MAX31865FaultStatus& out,
         return false;
     }
     delayUs(max31865_cmd::MANUAL_FAULT_STEP_SETTLE_US);
-    return waitForFaultCycleDone(timeoutMs) && readFaultStatus(out);
+    _autoConvert = false;
+    _conversionStarted = false;
+    _autoFirstConversionPending = false;
+    _sampleAvailable = false;
+    const bool ok = waitForFaultCycleDone(timeoutMs) && readFaultStatus(out);
+    delayUs(getBiasSettleTimeUs());
+    setState(MAX31865State::Ready);
+    return ok;
 }
 
 bool MAX31865::setFaultThresholdsRaw(uint16_t lowCode, uint16_t highCode) {
@@ -615,10 +838,10 @@ bool MAX31865::setFaultThresholdsRaw(uint16_t lowCode, uint16_t highCode) {
         static_cast<uint8_t>(lowReg >> 8U),
         static_cast<uint8_t>(lowReg & 0xFEU),
     };
-    return writeReg(max31865_cmd::REG_HIGH_FAULT_MSB, data[0]) &&
-           writeReg(max31865_cmd::REG_HIGH_FAULT_LSB, data[1]) &&
-           writeReg(max31865_cmd::REG_LOW_FAULT_MSB, data[2]) &&
-           writeReg(max31865_cmd::REG_LOW_FAULT_LSB, data[3]);
+    uint8_t tx[5] = {static_cast<uint8_t>(max31865_cmd::REG_HIGH_FAULT_MSB | max31865_cmd::WRITE_BIT),
+                     data[0], data[1], data[2], data[3]};
+    uint8_t rx[5] = {};
+    return transfer(tx, rx, sizeof(tx));
 }
 
 bool MAX31865::getFaultThresholdsRaw(MAX31865FaultThresholds& out) {
@@ -663,15 +886,22 @@ bool MAX31865::setFaultThresholdsTemperature(float lowC, float highC) {
 
 uint8_t MAX31865::readReg(uint8_t addr) {
     uint8_t value = 0;
-    if (!readRegister(addr, value)) {
+    if (!readReg(addr, value)) {
         return 0xFF;
     }
     return value;
 }
 
+bool MAX31865::readReg(uint8_t addr, uint8_t& value) {
+    return readRegister(addr, value);
+}
+
 bool MAX31865::readRegs(uint8_t startAddr, uint8_t* out, size_t len) {
-    if (!_initialized || out == nullptr || len == 0U ||
-        startAddr > max31865_cmd::REG_LAST ||
+    if (!_initialized) {
+        setFault(MAX31865Error::NotInitialized);
+        return false;
+    }
+    if (out == nullptr || len == 0U || startAddr > max31865_cmd::REG_LAST ||
         (static_cast<uint16_t>(startAddr) + static_cast<uint16_t>(len - 1U)) >
             max31865_cmd::REG_LAST) {
         setFault(MAX31865Error::InvalidArgument);
@@ -696,12 +926,16 @@ bool MAX31865::writeRegVerify(uint8_t addr, uint8_t value, uint8_t* readBack) {
     if (!writeReg(addr, value)) {
         return false;
     }
-    uint8_t verify = readReg(addr);
+    uint8_t verify = 0;
+    if (!readReg(addr, verify)) {
+        return false;
+    }
     if (readBack != nullptr) {
         *readBack = verify;
     }
-    if (verify != value) {
-        setFault(MAX31865Error::SpiTransferFailed);
+    const uint8_t mask = verifyMaskForRegister(addr);
+    if ((verify & mask) != (value & mask)) {
+        setFault(MAX31865Error::RegisterVerifyFailed);
         return false;
     }
     return true;
@@ -722,6 +956,94 @@ size_t MAX31865::dumpRegisters(MAX31865RegisterDump* out, size_t max) {
         out[i].value = readReg(static_cast<uint8_t>(i));
     }
     return count;
+}
+
+bool MAX31865::getSettings(MAX31865Settings& out) {
+    uint8_t regs[8] = {};
+    if (!readRegs(max31865_cmd::REG_CONFIG, regs, sizeof(regs))) {
+        return false;
+    }
+
+    out.config_register = regs[max31865_cmd::REG_CONFIG];
+    out.wire_mode = (out.config_register & max31865_cmd::CONFIG_3WIRE)
+                        ? MAX31865WireMode::ThreeWire
+                        : _wireMode;
+    if (out.wire_mode == MAX31865WireMode::ThreeWire) {
+        out.wire_mode = MAX31865WireMode::ThreeWire;
+    } else if (_wireMode == MAX31865WireMode::TwoWire) {
+        out.wire_mode = MAX31865WireMode::TwoWire;
+    } else {
+        out.wire_mode = MAX31865WireMode::FourWire;
+    }
+    out.filter = (out.config_register & max31865_cmd::CONFIG_FILTER_50HZ)
+                     ? MAX31865Filter::Hz50
+                     : MAX31865Filter::Hz60;
+    out.bias_enabled = (out.config_register & max31865_cmd::CONFIG_BIAS) != 0;
+    out.auto_convert = (out.config_register & max31865_cmd::CONFIG_AUTO) != 0;
+    out.one_shot = (out.config_register & max31865_cmd::CONFIG_ONE_SHOT) != 0;
+    out.fault_cycle = static_cast<uint8_t>(out.config_register & max31865_cmd::CONFIG_FAULT_CYCLE_MASK);
+
+    uint16_t high = static_cast<uint16_t>((static_cast<uint16_t>(regs[max31865_cmd::REG_HIGH_FAULT_MSB]) << 8U) |
+                                          regs[max31865_cmd::REG_HIGH_FAULT_LSB]);
+    uint16_t low = static_cast<uint16_t>((static_cast<uint16_t>(regs[max31865_cmd::REG_LOW_FAULT_MSB]) << 8U) |
+                                         regs[max31865_cmd::REG_LOW_FAULT_LSB]);
+    out.thresholds.high_code = static_cast<uint16_t>(high >> 1U);
+    out.thresholds.low_code = static_cast<uint16_t>(low >> 1U);
+    out.low_threshold_ohms = codeToResistance(out.thresholds.low_code);
+    out.high_threshold_ohms = codeToResistance(out.thresholds.high_code);
+    out.low_threshold_c = resistanceToTemperature(out.low_threshold_ohms);
+    out.high_threshold_c = resistanceToTemperature(out.high_threshold_ohms);
+    return true;
+}
+
+bool MAX31865::resetRegisters() {
+    if (!_initialized) {
+        setFault(MAX31865Error::NotInitialized);
+        return false;
+    }
+    const bool ok =
+        writeRegister(max31865_cmd::REG_CONFIG, max31865_cmd::CONFIG_RESET) &&
+        writeRegister(max31865_cmd::REG_HIGH_FAULT_MSB, max31865_cmd::HIGH_FAULT_MSB_RESET) &&
+        writeRegister(max31865_cmd::REG_HIGH_FAULT_LSB, max31865_cmd::HIGH_FAULT_LSB_RESET) &&
+        writeRegister(max31865_cmd::REG_LOW_FAULT_MSB, max31865_cmd::LOW_FAULT_MSB_RESET) &&
+        writeRegister(max31865_cmd::REG_LOW_FAULT_LSB, max31865_cmd::LOW_FAULT_LSB_RESET);
+    if (ok) {
+        _biasEnabled = false;
+        _autoConvert = false;
+        _conversionStarted = false;
+        _autoFirstConversionPending = false;
+        _sampleAvailable = false;
+        _wireMode = MAX31865WireMode::FourWire;
+        _filter = MAX31865Filter::Hz60;
+        _lastFaultStatus = 0;
+        setState(MAX31865State::Ready);
+    }
+    return ok;
+}
+
+bool MAX31865::registerReadbackTest(uint8_t* readBack) {
+    if (!_initialized) {
+        setFault(MAX31865Error::NotInitialized);
+        return false;
+    }
+    uint8_t saved = 0;
+    if (!readReg(max31865_cmd::REG_LOW_FAULT_LSB, saved)) {
+        return false;
+    }
+    const uint8_t pattern = static_cast<uint8_t>((saved ^ 0xA8U) & 0xFEU);
+    uint8_t verify = 0;
+    const bool writeOk = writeRegVerify(max31865_cmd::REG_LOW_FAULT_LSB, pattern, &verify);
+    const MAX31865Error verifyError = _lastError;
+    const bool restoreOk = writeRegister(max31865_cmd::REG_LOW_FAULT_LSB, saved);
+    if (readBack != nullptr) {
+        *readBack = verify;
+    }
+    if (!writeOk) {
+        setFault(verifyError == MAX31865Error::Ok ? MAX31865Error::RegisterVerifyFailed
+                                                  : verifyError);
+        return false;
+    }
+    return restoreOk;
 }
 
 float MAX31865::codeToResistance(uint16_t code) const {
@@ -823,6 +1145,7 @@ bool MAX31865::decodeFaultStatus(uint8_t raw, MAX31865FaultStatus& out) {
 
 bool MAX31865::applyConfig() {
     if (!_initialized) {
+        setFault(MAX31865Error::NotInitialized);
         return false;
     }
     return writeRegister(max31865_cmd::REG_CONFIG,
@@ -830,7 +1153,11 @@ bool MAX31865::applyConfig() {
 }
 
 bool MAX31865::readRegister(uint8_t addr, uint8_t& value) {
-    if (!_initialized || addr > max31865_cmd::REG_LAST) {
+    if (!_initialized) {
+        setFault(MAX31865Error::NotInitialized);
+        return false;
+    }
+    if (addr > max31865_cmd::REG_LAST) {
         setFault(MAX31865Error::InvalidArgument);
         return false;
     }
@@ -843,8 +1170,25 @@ bool MAX31865::readRegister(uint8_t addr, uint8_t& value) {
     return true;
 }
 
+bool MAX31865::readRegisterNoHealth(uint8_t addr, uint8_t& value) {
+    if (!_initialized || addr > max31865_cmd::REG_LAST) {
+        return false;
+    }
+    uint8_t tx[2] = {static_cast<uint8_t>(addr & max31865_cmd::READ_MASK), 0xFF};
+    uint8_t rx[2] = {};
+    if (!transferRaw(tx, rx, sizeof(tx), false)) {
+        return false;
+    }
+    value = rx[1];
+    return true;
+}
+
 bool MAX31865::writeRegister(uint8_t addr, uint8_t value) {
-    if (!_initialized || !isWritableRegister(addr)) {
+    if (!_initialized) {
+        setFault(MAX31865Error::NotInitialized);
+        return false;
+    }
+    if (!isWritableRegister(addr)) {
         setFault(MAX31865Error::InvalidArgument);
         return false;
     }
@@ -853,9 +1197,48 @@ bool MAX31865::writeRegister(uint8_t addr, uint8_t value) {
     return transfer(tx, rx, sizeof(tx));
 }
 
-bool MAX31865::transfer(const uint8_t* tx, uint8_t* rx, size_t len) {
+bool MAX31865::writeRegisterNoHealth(uint8_t addr, uint8_t value) {
+    if (!_initialized || !isWritableRegister(addr)) {
+        return false;
+    }
+    uint8_t tx[2] = {static_cast<uint8_t>(addr | max31865_cmd::WRITE_BIT), value};
+    uint8_t rx[2] = {};
+    return transferRaw(tx, rx, sizeof(tx), false);
+}
+
+bool MAX31865::lockSpi(bool recordHealth) {
+    if (_spiMutex == nullptr) {
+        if (recordHealth) {
+            recordFailure(MAX31865Error::NotInitialized);
+        }
+        return false;
+    }
+    if (xSemaphoreTake(_spiMutex, pdMS_TO_TICKS(_spiLockTimeoutMs)) != pdTRUE) {
+        if (recordHealth) {
+            if (_spiLockTimeoutCount < UINT32_MAX) {
+                _spiLockTimeoutCount++;
+            }
+            recordFailure(MAX31865Error::SpiLockTimeout);
+        }
+        return false;
+    }
+    return true;
+}
+
+void MAX31865::unlockSpi() {
+    if (_spiMutex != nullptr) {
+        xSemaphoreGive(_spiMutex);
+    }
+}
+
+bool MAX31865::transferRaw(const uint8_t* tx, uint8_t* rx, size_t len, bool recordHealth) {
     if (_spi == nullptr || _csPin < 0 || tx == nullptr || rx == nullptr || len == 0U) {
-        setFault(MAX31865Error::InvalidArgument);
+        if (recordHealth) {
+            setFault(MAX31865Error::InvalidArgument);
+        }
+        return false;
+    }
+    if (!lockSpi(recordHealth)) {
         return false;
     }
     _spi->beginTransaction(_spiSettings);
@@ -865,8 +1248,15 @@ bool MAX31865::transfer(const uint8_t* tx, uint8_t* rx, size_t len) {
     }
     digitalWrite(_csPin, HIGH);
     _spi->endTransaction();
-    recordOk();
+    unlockSpi();
+    if (recordHealth) {
+        recordOk();
+    }
     return true;
+}
+
+bool MAX31865::transfer(const uint8_t* tx, uint8_t* rx, size_t len) {
+    return transferRaw(tx, rx, len, true);
 }
 
 bool MAX31865::waitForFaultCycleDone(uint32_t timeoutMs) {
@@ -889,25 +1279,38 @@ bool MAX31865::conversionReady() {
     if (_drdyPin >= 0 && digitalRead(_drdyPin) == LOW) {
         return true;
     }
-    if (_conversionStarted &&
-        (nowMs() - _conversionStartMs) >= getSingleConversionTimeMs()) {
-        _conversionStarted = false;
-        _sampleAvailable = true;
-        return true;
-    }
-    if (_autoConvert &&
-        (nowMs() - _conversionStartMs) >= getContinuousConversionTimeMs()) {
+    const uint32_t readyMs = (_autoConvert && !_autoFirstConversionPending)
+                                 ? getContinuousConversionTimeMs()
+                                 : getSingleConversionTimeMs();
+    if (_conversionStarted && (nowMs() - _conversionStartMs) >= readyMs) {
         _sampleAvailable = true;
         return true;
     }
     return _sampleAvailable;
 }
 
+bool MAX31865::available() const {
+    if (_sampleAvailable) {
+        return true;
+    }
+    if (_drdyPin >= 0 && digitalRead(_drdyPin) == LOW) {
+        return true;
+    }
+    const uint32_t readyMs = (_autoConvert && !_autoFirstConversionPending)
+                                 ? getContinuousConversionTimeMs()
+                                 : getSingleConversionTimeMs();
+    return _conversionStarted && ((nowMs() - _conversionStartMs) >= readyMs);
+}
+
 bool MAX31865::cacheSample(MAX31865Sample& sample) {
+    if (_lastSampleValid && _sampleAvailable) {
+        _overrunCount++;
+    }
     _lastSample = sample;
     _lastSampleValid = true;
     _lastSampleTimestampMs = sample.timestamp_ms;
     _keptSampleCount++;
+    _queueHighWater = 1U;
     return true;
 }
 
@@ -947,6 +1350,11 @@ void MAX31865::recordFailure(MAX31865Error error) {
     }
     if (error == MAX31865Error::SpiTransferFailed) {
         _spiErrorCount++;
+    }
+    if (error == MAX31865Error::Timeout) {
+        if (_drdyTimeoutCount < UINT32_MAX) {
+            _drdyTimeoutCount++;
+        }
     }
     if (_initialized) {
         _driverState = (_consecutiveFailures >= _offlineThreshold)

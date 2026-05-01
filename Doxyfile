@@ -1,12 +1,19 @@
 PROJECT_NAME           = "MAX31865"
+PROJECT_NUMBER         = "0.1.2"
 PROJECT_BRIEF          = "ESP32 Arduino driver for the Maxim MAX31865 RTD-to-digital converter"
 OUTPUT_DIRECTORY       = docs/generated
 INPUT                  = README.md \
+                         AGENTS.md \
+                         CONTRIBUTING.md \
+                         SECURITY.md \
                          docs/README.md \
                          docs/api-overview.md \
                          docs/repository-contract.md \
                          docs/esp-idf-porting.md \
+                         docs/extracted-md/00_document_inventory.md \
+                         docs/vendor-reference-code/README.md \
                          include/MAX31865.h \
+                         include/MAX31865/CommandTable.h \
                          include/MAX31865/Version.h \
                          include/MAX31865/max31865_driver.h
 USE_MDFILE_AS_MAINPAGE = README.md

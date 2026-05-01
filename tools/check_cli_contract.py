@@ -27,6 +27,13 @@ MANDATORY_COMMANDS = [
     "read",
     "verbose",
     "stress",
+    "selftest",
+    "id",
+    "comms",
+    "reset",
+    "cmd",
+    "lock",
+    "unlock",
     "regs",
     "rreg",
     "rregs",
@@ -37,6 +44,13 @@ MANDATORY_COMMANDS = [
     "faultmanual",
     "threshold",
     "spihz",
+    "lockms",
+    "sps",
+    "temp",
+    "stats",
+    "clearhealth",
+    "rtd",
+    "scale",
 ]
 
 MANDATORY_DIAGNOSTIC_TOKENS = [

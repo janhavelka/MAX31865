@@ -25,6 +25,7 @@ directly.
 
 - Main RTD header: `include/MAX31865.h`
 - Register constants: `include/MAX31865/max31865_driver.h`
+- Compatibility register-constant include: `include/MAX31865/CommandTable.h`
 - Sources: `src/`
 - Bringup CLI: `examples/01_basic_bringup_cli`
 - Public API smoke build: `examples/02_api_smoke`

@@ -20,6 +20,10 @@ and the project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   one-sample cache access.
 - Register helpers: `readReg()`, `readRegs()`, `writeReg()`,
   `writeRegVerify()`, and `dumpRegisters()`.
+- Production diagnostics: `readIfReady()`, `available()`, `getSettings()`,
+  `resetRegisters()`, `registerReadbackTest()`, SPI lock timeout controls,
+  RTD coefficient configuration, and the compatibility
+  `MAX31865/CommandTable.h` include.
 - MAX31865 conversion helpers for raw ADC code, resistance, temperature, and
   threshold conversion.
 - Fault latch decoding, clear, automatic fault cycle, and manual fault cycle
@@ -28,11 +32,15 @@ and the project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   example, and PlatformIO environments `ex_bringup_s3`, `ex_bringup_s2`, and
   `ex_api_smoke_s3`.
 - Minimal Doxygen configuration for public API documentation.
+- Root `AGENTS.md` production guidelines for future driver work.
 
 ### Changed
 - Public API now follows the ADS1261 sibling style: global device class,
   device-prefixed types, typed begin config, health snapshot, and C-style name
   helpers.
+- Configuration setters preserve cached state when register writes fail, probe
+  uses writable-register readback/restore, and failed initialization releases
+  allocated driver resources.
 - README and support docs now describe protocol ownership, repository layout,
   validation gates, and ESP-IDF portability expectations.
 

@@ -78,16 +78,38 @@ def main() -> None:
 
 namespace MAX31865Version {{
 
+/// @brief Major version (breaking changes).
 static constexpr uint16_t VERSION_MAJOR = {major};
+
+/// @brief Minor version (new features, backward compatible).
 static constexpr uint16_t VERSION_MINOR = {minor};
+
+/// @brief Patch version (bug fixes).
 static constexpr uint16_t VERSION_PATCH = {patch};
+
+/// @brief Full version string (e.g., "1.2.3").
 static constexpr const char* VERSION = "{version}";
+
+/// @brief Encoded version for numeric comparison.
+/// @note Format: MAJOR*10000 + MINOR*100 + PATCH.
 static constexpr uint32_t VERSION_CODE = {version_code};
+
+/// @brief Build date (YYYY-MM-DD).
 static constexpr const char* BUILD_DATE = "{build_date}";
+
+/// @brief Build time (HH:MM:SS).
 static constexpr const char* BUILD_TIME = "{build_time}";
+
+/// @brief Full build timestamp.
 static constexpr const char* BUILD_TIMESTAMP = "{build_timestamp}";
+
+/// @brief Git commit hash (short).
 static constexpr const char* GIT_COMMIT = "{commit}";
+
+/// @brief Git working tree status ("clean" or "dirty").
 static constexpr const char* GIT_STATUS = "{status}";
+
+/// @brief Full version string with commit and build timestamp.
 static constexpr const char* VERSION_FULL = "{version} ({commit}, {build_timestamp})";
 
 }}  // namespace MAX31865Version

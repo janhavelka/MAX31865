@@ -18,6 +18,7 @@ The public API should stay recognizable in the port:
 - `MAX31865State`
 - `MAX31865Error`
 - `MAX31865Health`
+- `MAX31865Settings`
 - register helpers
 - fault helpers
 - conversion helpers
@@ -34,6 +35,7 @@ Arduino-specific calls concentrated.
 | --- | --- |
 | `#include <Arduino.h>` | Public Arduino header |
 | `SPIClass`, `SPISettings` | Public begin config, positional begin overload, and SPI glue |
+| FreeRTOS semaphore | Internal SPI transaction serialization |
 | `delay()` | 1 call |
 | `delayMicroseconds()` | 1 call |
 | `millis()` | 1 call |

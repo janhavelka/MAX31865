@@ -28,8 +28,9 @@ output.
 
 ## Generated Output
 
-`generated/` is Doxygen output from the root `Doxyfile`. Do not edit generated
-files by hand; update the source headers or Markdown pages and regenerate.
+`generated/` is local Doxygen output from the root `Doxyfile` and is ignored by
+Git. Do not edit generated files by hand; update the source headers or Markdown
+pages and regenerate.
 
 ## Naming Rules
 

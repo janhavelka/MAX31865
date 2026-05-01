@@ -19,6 +19,8 @@ static void exercisePublicApi(MAX31865& device) {
   cfg.inputFilterTimeConstantUs = 1000U;
   cfg.wireMode = MAX31865WireMode::FourWire;
   cfg.filter = MAX31865Filter::Hz60;
+  cfg.useCustomCoefficients = false;
+  cfg.coefficients = {3.90830e-3f, -5.77500e-7f, -4.18301e-12f};
 
   MAX31865Health health = device.health();
   MAX31865Status status = device.lastOperationStatus();
@@ -26,6 +28,7 @@ static void exercisePublicApi(MAX31865& device) {
   MAX31865Sample sample{};
   MAX31865RawRtd raw{};
   MAX31865FaultThresholds thresholds{};
+  MAX31865Settings settings{};
   MAX31865RegisterDump dump[8] = {};
   uint8_t regs[8] = {};
   uint8_t readback = 0;
@@ -47,9 +50,20 @@ static void exercisePublicApi(MAX31865& device) {
   (void)device.totalSuccess();
   (void)device.offlineThreshold();
   device.setOfflineThreshold(5);
+  device.setSpiLockTimeoutMs(50U);
+  (void)device.spiLockTimeoutMs();
   device.clearHealthCounters();
   device.setSpiHz(1000000U);
   (void)device.spiHz();
+  (void)device.wireMode();
+  (void)device.filter();
+  (void)device.biasEnabled();
+  (void)device.autoConvertEnabled();
+  (void)device.referenceResistorOhms();
+  (void)device.rtdNominalOhms();
+  (void)device.inputFilterTimeConstantUs();
+  (void)device.rtdCoefficients();
+  (void)device.setRtdParameters(400.0f, 100.0f);
 
   (void)MAX31865::decodeFaultStatus(0xFC, fault);
   (void)MAX31865::codeToRatio(16384U);
@@ -77,6 +91,8 @@ static void exercisePublicApi(MAX31865& device) {
     (void)device.readSingle(sample, 200U);
     (void)device.poll(sample);
     (void)device.available();
+    (void)device.isDataReady();
+    (void)device.readIfReady(sample);
     (void)device.readSample(sample);
     (void)device.droppedCount();
     (void)device.overrunCount();
@@ -95,10 +111,14 @@ static void exercisePublicApi(MAX31865& device) {
     (void)device.getFaultThresholdsResistance(lowOhms, highOhms);
     (void)device.setFaultThresholdsTemperature(-50.0f, 250.0f);
     (void)device.readReg(max31865_cmd::REG_CONFIG);
+    (void)device.readReg(max31865_cmd::REG_CONFIG, readback);
     (void)device.readRegs(max31865_cmd::REG_CONFIG, regs, sizeof(regs));
     (void)device.writeReg(max31865_cmd::REG_CONFIG, max31865_cmd::CONFIG_RESET);
     (void)device.writeRegVerify(max31865_cmd::REG_CONFIG, max31865_cmd::CONFIG_RESET, &readback);
     (void)device.dumpRegisters(dump, 8U);
+    (void)device.getSettings(settings);
+    (void)device.registerReadbackTest(&readback);
+    (void)device.resetRegisters();
     device.tick(millis());
     device.end();
   }
