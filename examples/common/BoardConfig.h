@@ -7,7 +7,7 @@
 
 #include <Arduino.h>
 #include <stdint.h>
-#include <MAX31865.h>
+#include "MAX31865/MAX31865.h"
 
 namespace board {
 

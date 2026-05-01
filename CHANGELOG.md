@@ -8,7 +8,9 @@ and the project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
-- Canonical public driver header `MAX31865.h`.
+- Canonical public driver header `MAX31865/MAX31865.h`.
+- Split public support headers `MAX31865/Config.h` and
+  `MAX31865/Status.h`.
 - Typed setup API: `MAX31865BeginConfig`.
 - Driver supervision APIs: `MAX31865State`, `MAX31865DriverState`,
   `MAX31865Error`, `MAX31865Status`, `MAX31865Health`,
@@ -22,8 +24,7 @@ and the project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `writeRegVerify()`, and `dumpRegisters()`.
 - Production diagnostics: `readIfReady()`, `available()`, `getSettings()`,
   `resetRegisters()`, `registerReadbackTest()`, SPI lock timeout controls,
-  RTD coefficient configuration, and the compatibility
-  `MAX31865/CommandTable.h` include.
+  RTD coefficient configuration, and `MAX31865/CommandTable.h`.
 - MAX31865 conversion helpers for raw ADC code, resistance, temperature, and
   threshold conversion.
 - Fault latch decoding, clear, automatic fault cycle, and manual fault cycle
@@ -35,7 +36,8 @@ and the project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Root `AGENTS.md` production guidelines for future driver work.
 
 ### Changed
-- Public API now follows the ADS1261 sibling style: global device class,
+- Public API now follows the I2C library layout: nested canonical header,
+  split config/status headers, global device class,
   device-prefixed types, typed begin config, health snapshot, and C-style name
   helpers.
 - Configuration setters preserve cached state when register writes fail, probe
@@ -45,7 +47,7 @@ and the project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   validation gates, and ESP-IDF portability expectations.
 
 ### Removed
-- Early native-only test scaffold and split namespaced public headers.
+- Early native-only test scaffold and the old root-level public header layout.
 
 ## [0.1.2] - 2026-04-29
 

@@ -1,18 +1,18 @@
 #include <Arduino.h>
 #include <SPI.h>
-#include <MAX31865.h>
+#include "MAX31865/MAX31865.h"
 #include <MAX31865/Version.h>
 #include <ctype.h>
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
 
-#include "../common/BoardConfig.h"
-#include "../common/Log.h"
-#include "../common/TransportAdapter.h"
-#include "../common/BusDiag.h"
-#include "../common/HealthView.h"
-#include "../common/CliStyle.h"
+#include "examples/common/BoardConfig.h"
+#include "examples/common/Log.h"
+#include "examples/common/TransportAdapter.h"
+#include "examples/common/BusDiag.h"
+#include "examples/common/HealthView.h"
+#include "examples/common/CliStyle.h"
 
 static const uint32_t DEFAULT_SPI_HZ = MAX31865_DEFAULT_SPI_HZ;
 static constexpr uint32_t STRESS_PROGRESS_UPDATES = 10U;

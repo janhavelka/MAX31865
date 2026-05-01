@@ -7,7 +7,7 @@ current runtime target; Arduino/PlatformIO remains the supported runtime.
 
 - Current package version: `0.1.2`
 - Target ESP-IDF major version: `2.0.0`
-- Current public include: `#include "MAX31865.h"`
+- Current public include: `#include "MAX31865/MAX31865.h"`
 - Current namespace: global scope
 - Suggested v2 namespace: `MAX31865Driver`
 - Difficulty: low to medium

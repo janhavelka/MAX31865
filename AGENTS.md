@@ -13,10 +13,11 @@ You are a professional embedded software engineer building a production-grade MA
 
 ```
 include/                  - Public API headers only (Doxygen)
-  MAX31865.h              - Main Arduino C++ driver API
   MAX31865/
-    CommandTable.h        - Backward-compatible register-constant include
-    max31865_driver.h     - Register addresses, bit masks, protocol constants
+    MAX31865.h            - Main Arduino C++ driver API
+    Config.h              - Configuration structs/enums and defaults
+    Status.h              - Error/status, sample, and health types
+    CommandTable.h        - Register addresses, bit masks, protocol constants
     Version.h             - Auto-generated (do not edit)
 src/                      - Implementation (.cpp)
 examples/
@@ -35,7 +36,7 @@ Rules:
 - `examples/common/` is NOT part of the library. It simulates project glue and keeps examples self-contained.
 - No board-specific pin defaults in library code; wiring must come from `MAX31865BeginConfig` or explicit begin arguments.
 - Public headers stay under `include/`; do not expose private implementation headers from `src/`.
-- Keep `CommandTable.h` backward-compatible; new register constants belong in `MAX31865/max31865_driver.h`.
+- Keep register/protocol constants in `MAX31865/CommandTable.h`.
 - Examples demonstrate usage and may use `examples/common/BoardConfig.h`.
 - Keep the layout boring and predictable.
 

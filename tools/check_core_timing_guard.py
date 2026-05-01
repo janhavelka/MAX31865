@@ -32,7 +32,7 @@ ALLOWED_CALL_COUNTS: Dict[str, Dict[str, int]] = {
     },
 }
 ALLOWED_INCLUDE_COUNTS: Dict[str, int] = {
-    "include/MAX31865.h": 1,
+    "include/MAX31865/MAX31865.h": 1,
 }
 
 TIMING_MINIMUMS = {
@@ -130,7 +130,7 @@ def main() -> int:
                 f"Arduino include count mismatch in {rel}: observed={obs}, expected={exp}"
             )
 
-    timing_text = (ROOT / "include" / "MAX31865" / "max31865_driver.h").read_text(
+    timing_text = (ROOT / "include" / "MAX31865" / "CommandTable.h").read_text(
         encoding="utf-8",
         errors="replace",
     )

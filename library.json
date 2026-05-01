@@ -33,7 +33,7 @@
     "espressif32"
   ],
   "headers": [
-    "MAX31865.h"
+    "MAX31865/MAX31865.h"
   ],
   "build": {
     "includeDir": "include",

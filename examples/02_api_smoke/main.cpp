@@ -1,6 +1,6 @@
 #include <Arduino.h>
 #include <SPI.h>
-#include <MAX31865.h>
+#include "MAX31865/MAX31865.h"
 #include <MAX31865/Version.h>
 
 MAX31865 rtd;

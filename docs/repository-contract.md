@@ -9,8 +9,8 @@ libraries while keeping MAX31865-specific diagnostics visible.
   - `library.json`
   - `include/`
   - `src/`
-- One canonical public RTD driver header: `include/MAX31865.h`.
-- Optional support headers live under `include/MAX31865/`.
+- One canonical public RTD driver header: `include/MAX31865/MAX31865.h`.
+- Support headers live under `include/MAX31865/`.
 - Main operator example: `examples/01_basic_bringup_cli`.
 - Public API compile/link smoke example: `examples/02_api_smoke`.
 - Example-only helpers live under `examples/common/*`.

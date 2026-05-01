@@ -12,10 +12,11 @@ INPUT                  = README.md \
                          docs/esp-idf-porting.md \
                          docs/extracted-md/00_document_inventory.md \
                          docs/vendor-reference-code/README.md \
-                         include/MAX31865.h \
+                         include/MAX31865/MAX31865.h \
                          include/MAX31865/CommandTable.h \
+                         include/MAX31865/Config.h \
+                         include/MAX31865/Status.h \
                          include/MAX31865/Version.h \
-                         include/MAX31865/max31865_driver.h
 USE_MDFILE_AS_MAINPAGE = README.md
 FILE_PATTERNS          = *.h *.md
 RECURSIVE              = NO

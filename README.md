@@ -23,9 +23,10 @@ directly.
 
 ## Public Layout
 
-- Main RTD header: `include/MAX31865.h`
-- Register constants: `include/MAX31865/max31865_driver.h`
-- Compatibility register-constant include: `include/MAX31865/CommandTable.h`
+- Main RTD header: `include/MAX31865/MAX31865.h`
+- Configuration types: `include/MAX31865/Config.h`
+- Status, sample, and health types: `include/MAX31865/Status.h`
+- Register constants: `include/MAX31865/CommandTable.h`
 - Sources: `src/`
 - Bringup CLI: `examples/01_basic_bringup_cli`
 - Public API smoke build: `examples/02_api_smoke`
@@ -38,13 +39,13 @@ directly.
 Use this include:
 
 ```cpp
-#include <MAX31865.h>
+#include "MAX31865/MAX31865.h"
 ```
 
 ## Minimal Example
 
 ```cpp
-#include <MAX31865.h>
+#include "MAX31865/MAX31865.h"
 
 MAX31865 rtd;
 
