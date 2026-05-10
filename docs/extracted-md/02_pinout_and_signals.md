@@ -1,4 +1,4 @@
-﻿# Pinout and Signals
+# Pinout and Signals
 
 ## Package Pin Configurations
 
@@ -18,11 +18,11 @@ All rows in this table are from the datasheet pin-description table. [Source: MA
 | 2 | 5 | REFIN+ | Positive reference voltage input. Connect to BIAS. Connect the reference resistor between REFIN+ and REFIN-. |
 | 3 | 6 | REFIN- | Negative reference voltage input. Connect the reference resistor between REFIN+ and REFIN-. |
 | 4 | 7 | ISENSOR | Low side of RREF. Connect to REFIN-. |
-| 5 | 8 | FORCE+ | High-side RTD drive. Connect to FORCE2 when using the 3-wire connection configuration. Protected to ±45 V. |
-| 6 | 9 | FORCE2 | Positive input used in 3-wire only. In 3-wire configuration, connect to FORCE+. In 2-wire or 4-wire configuration, connect to ground. Protected to ±45 V. |
-| 7 | 10 | RTDIN+ | Positive RTD input. Protected to ±45 V. |
-| 8 | 11 | RTDIN- | Negative RTD input. Protected to ±45 V. |
-| 9 | 12 | FORCE- | Low-side RTD return. Protected to ±45 V. |
+| 5 | 8 | FORCE+ | High-side RTD drive. Connect to FORCE2 when using the 3-wire connection configuration. Protected to +/-45 V. |
+| 6 | 9 | FORCE2 | Positive input used in 3-wire only. In 3-wire configuration, connect to FORCE+. In 2-wire or 4-wire configuration, connect to ground. Protected to +/-45 V. |
+| 7 | 10 | RTDIN+ | Positive RTD input. Protected to +/-45 V. |
+| 8 | 11 | RTDIN- | Negative RTD input. Protected to +/-45 V. |
+| 9 | 12 | FORCE- | Low-side RTD return. Protected to +/-45 V. |
 | 10 | 13 | GND2 | Analog ground. Connect to GND1. |
 | 11 | 14 | SDI | Serial-data input. |
 | 12 | 15 | SCLK | Serial-data clock input. |
@@ -32,8 +32,8 @@ All rows in this table are from the datasheet pin-description table. [Source: MA
 | 16 | 19 | GND1 | Analog ground. Connect to GND2. |
 | 17 | 20 | N.C. | Do not connect. |
 | 18 | 1 | DRDY | Active-low, push-pull, data-ready output. DRDY goes low when a new conversion result is available in the data register. When a read operation of an RTD resistance data register occurs, DRDY returns high. |
-| 19 | 2 | DVDD | Digital supply voltage input. Connect to a 3.3 V power supply. Bypass to DGND with a 0.1 µF bypass capacitor. |
-| 20 | 3 | VDD | Analog supply voltage input. Connect to a 3.3 V power supply. Bypass to GND1 with a 0.1 µF bypass capacitor. |
+| 19 | 2 | DVDD | Digital supply voltage input. Connect to a 3.3 V power supply. Bypass to DGND with a 0.1 uF bypass capacitor. |
+| 20 | 3 | VDD | Analog supply voltage input. Connect to a 3.3 V power supply. Bypass to GND1 with a 0.1 uF bypass capacitor. |
 | - | - | EP | Exposed pad on bottom side of package. Connect to GND1. Applies to TQFN package only. |
 
 ## Signal Groups
@@ -44,11 +44,11 @@ The RTD-measurement path uses BIAS, REFIN+, REFIN-, ISENSOR, FORCE+, FORCE2, RTD
 
 The block diagram shows BIAS driven by a VBIAS generator and shows REFIN+, REFIN-, ISENSOR, FORCE+, FORCE2, RTDIN+, RTDIN-, and FORCE- feeding the protected RTD/ADC path. [Source: MAX31865 RTD-to-Digital Converter, p. 9]
 
-FORCE+, FORCE2, FORCE-, RTDIN+, and RTDIN- are protected against input voltages up to ±45 V. [Source: MAX31865 RTD-to-Digital Converter, p. 11]
+FORCE+, FORCE2, FORCE-, RTDIN+, and RTDIN- are protected against input voltages up to +/-45 V. [Source: MAX31865 RTD-to-Digital Converter, p. 11]
 
 Signals applied to FORCE+, FORCE2, FORCE-, RTDIN+, and RTDIN- are gated by analog switches that open when the applied voltage is typically greater than VDD + 100 mV or less than GND1 - 400 mV. [Source: MAX31865 RTD-to-Digital Converter, p. 11]
 
-When a voltage fault occurs on protected inputs, the datasheet states that the protection circuits may allow approximately 350 µA of current flow and that this fault-induced leakage current does not damage the MAX31865. [Source: MAX31865 RTD-to-Digital Converter, p. 11]
+When a voltage fault occurs on protected inputs, the datasheet states that the protection circuits may allow approximately 350 uA of current flow and that this fault-induced leakage current does not damage the MAX31865. [Source: MAX31865 RTD-to-Digital Converter, p. 11]
 
 ### SPI Pins
 
@@ -72,9 +72,9 @@ The datasheet and tutorial show 2-wire, 3-wire, and 4-wire MAX31865 application 
 
 The application circuits show REFIN+ connected to BIAS and the upper side of RREF, while REFIN- and ISENSOR are tied to the lower side of RREF. [Sources: MAX31865 RTD-to-Digital Converter, p. 1; MAX31865 RTD-to-Digital Converter, p. 24; Temperature Sensor Tutorial, p. 7]
 
-The application circuits show 0.1 µF bypass capacitors from VDD and DVDD supply nodes to ground. [Sources: MAX31865 RTD-to-Digital Converter, p. 1; MAX31865 RTD-to-Digital Converter, p. 24; Temperature Sensor Tutorial, p. 7]
+The application circuits show 0.1 uF bypass capacitors from VDD and DVDD supply nodes to ground. [Sources: MAX31865 RTD-to-Digital Converter, p. 1; MAX31865 RTD-to-Digital Converter, p. 24; Temperature Sensor Tutorial, p. 7]
 
-The application circuits label CI as 10 nF for a 1 kΩ RTD and 100 nF for a 100 Ω RTD. [Sources: MAX31865 RTD-to-Digital Converter, p. 1; MAX31865 RTD-to-Digital Converter, p. 24; Temperature Sensor Tutorial, p. 7]
+The application circuits label CI as 10 nF for a 1 kOhm RTD and 100 nF for a 100 Ohm RTD. [Sources: MAX31865 RTD-to-Digital Converter, p. 1; MAX31865 RTD-to-Digital Converter, p. 24; Temperature Sensor Tutorial, p. 7]
 
 ### 4-Wire Sensor Connection
 

@@ -1,4 +1,4 @@
-﻿# Modes, DRDY, Status, and Faults
+# Modes, DRDY, Status, and Faults
 
 ## Conversion and Power Modes
 
@@ -66,11 +66,11 @@ Threshold-comparison wording differs by section: body text says high/low thresho
 
 ## Input Protection and Overvoltage/Undervoltage Faults
 
-FORCE+, FORCE2, FORCE-, RTDIN+, and RTDIN- are protected against input voltages up to ±45 V. [Source: MAX31865 RTD-to-Digital Converter, p. 11]
+FORCE+, FORCE2, FORCE-, RTDIN+, and RTDIN- are protected against input voltages up to +/-45 V. [Source: MAX31865 RTD-to-Digital Converter, p. 11]
 
 Signals applied to those pins are gated by analog switches that open when the applied voltage is typically greater than VDD + 100 mV or less than GND1 - 400 mV. [Source: MAX31865 RTD-to-Digital Converter, p. 11]
 
-When a voltage fault occurs, the protection circuits may allow approximately 350 µA of current flow, and the datasheet states this current does not damage the MAX31865. [Source: MAX31865 RTD-to-Digital Converter, p. 11]
+When a voltage fault occurs, the protection circuits may allow approximately 350 uA of current flow, and the datasheet states this current does not damage the MAX31865. [Source: MAX31865 RTD-to-Digital Converter, p. 11]
 
 When an overvoltage or undervoltage condition is detected, Fault Status register D2 is set and ADC conversion updates halt until the fault is no longer detected; conversions resume after the fault is no longer detected. [Source: MAX31865 RTD-to-Digital Converter, p. 11]
 
@@ -94,19 +94,19 @@ The low fault threshold registers set the threshold for shorted RTD detection. [
 
 The fault-detection cycle checks three comparisons and sets the associated Fault Status bits: REFIN- > 85% x VBIAS sets D5; REFIN- < 85% x VBIAS with FORCE- open sets D4; RTDIN- < 85% x VBIAS with FORCE- open sets D3. The datasheet note states all voltages are referenced to GND1. [Source: MAX31865 RTD-to-Digital Converter, p. 14]
 
-If external RTD interface circuitry includes an input filter with a time constant greater than 100 µs, the datasheet states the fault-detection cycle timing should be controlled in manual mode. [Source: MAX31865 RTD-to-Digital Converter, p. 14]
+If external RTD interface circuitry includes an input filter with a time constant greater than 100 us, the datasheet states the fault-detection cycle timing should be controlled in manual mode. [Source: MAX31865 RTD-to-Digital Converter, p. 14]
 
 ### Automatic Fault-Detection Cycle
 
 Writing `100X010Xb` to the Configuration register enters automatic fault detection. The ADC is then in `Normally Off` mode. [Source: MAX31865 RTD-to-Digital Converter, p. 14]
 
-The automatic fault-detection cycle inserts 100 µs delays before checking for faults, allowing the external input filter to settle. [Source: MAX31865 RTD-to-Digital Converter, p. 14]
+The automatic fault-detection cycle inserts 100 us delays before checking for faults, allowing the external input filter to settle. [Source: MAX31865 RTD-to-Digital Converter, p. 14]
 
 Fault Detect Cycle bits D[3:2] self-clear to `00b` on completion of the automatic fault-detection cycle. [Source: MAX31865 RTD-to-Digital Converter, p. 14]
 
-The electrical table lists automatic fault-detection cycle time as 550 µs typ / 600 µs max from CS high to cycle complete. [Source: MAX31865 RTD-to-Digital Converter, p. 3]
+The electrical table lists automatic fault-detection cycle time as 550 us typ / 600 us max from CS high to cycle complete. [Source: MAX31865 RTD-to-Digital Converter, p. 3]
 
-The automatic-mode flowchart shows this sequence: master writes `100X010Xb`; FORCE-input switch remains closed; 100 µs delay; test `VREFIN- > 0.85 x VBIAS`; 100 µs delay; open FORCE-input switch; 210 µs delay; test `VREFIN- < 0.85 x VBIAS`; 100 µs delay; test `RTDIN- < 0.85 x VBIAS`; close FORCE-input switch; set Configuration register to `100X000Xb`; end fault-detection cycle. [Source: MAX31865 RTD-to-Digital Converter, p. 12]
+The automatic-mode flowchart shows this sequence: master writes `100X010Xb`; FORCE-input switch remains closed; 100 us delay; test `VREFIN- > 0.85 x VBIAS`; 100 us delay; open FORCE-input switch; 210 us delay; test `VREFIN- < 0.85 x VBIAS`; 100 us delay; test `RTDIN- < 0.85 x VBIAS`; close FORCE-input switch; set Configuration register to `100X000Xb`; end fault-detection cycle. [Source: MAX31865 RTD-to-Digital Converter, p. 12]
 
 ### Manual Fault-Detection Cycle
 
@@ -116,7 +116,7 @@ During manual cycle 1, the MAX31865 checks for faults while the FORCE- input swi
 
 After manual cycle 1, wait at least 5 time constants, then write `100X110Xb` to the Configuration register. The MAX31865 checks for faults while the FORCE- input switch is open. When the check completes, the FORCE- input switch closes and Fault Detect Cycle bits D[3:2] self-clear to `00b`. [Source: MAX31865 RTD-to-Digital Converter, p. 14]
 
-The manual-mode flowchart shows this sequence: master writes `100X100Xb`; FORCE-input switch remains closed; 100 µs delay; test `VREFIN- > 0.85 x VBIAS`; 100 µs delay; open FORCE-input switch; wait for master write `100X110Xb`; 100 µs delay; test `VREFIN- < 0.85 x VBIAS`; 100 µs delay; test `RTDIN- < 0.85 x VBIAS`; close FORCE-input switch; set Configuration register to `100X000Xb`; end fault-detection cycle. [Source: MAX31865 RTD-to-Digital Converter, p. 12]
+The manual-mode flowchart shows this sequence: master writes `100X100Xb`; FORCE-input switch remains closed; 100 us delay; test `VREFIN- > 0.85 x VBIAS`; 100 us delay; open FORCE-input switch; wait for master write `100X110Xb`; 100 us delay; test `VREFIN- < 0.85 x VBIAS`; 100 us delay; test `RTDIN- < 0.85 x VBIAS`; close FORCE-input switch; set Configuration register to `100X000Xb`; end fault-detection cycle. [Source: MAX31865 RTD-to-Digital Converter, p. 12]
 
 If 1 is written to D5 and D2 or D3 in a single Configuration-register write, both commands are ignored. [Source: MAX31865 RTD-to-Digital Converter, p. 14]
 
@@ -126,7 +126,7 @@ If `100X110Xb` is set without prior initiation of manual cycle 1 using `100X100X
 
 In 3-wire and 4-wire RTD connection configurations, a broken or disconnected RTDIN+ cable results in an unbiased ADC+ input into the MAX31865. The datasheet states that this causes unpredictable ADC conversion results influenced by PCB layout, external circuit noise, and ambient temperature. [Source: MAX31865 RTD-to-Digital Converter, p. 21]
 
-The datasheet states that this RTDIN+ cable fault condition can go undetected depending on the values set in the fault threshold registers. If this condition is of interest, it recommends adding a 10 MΩ resistor from RTDIN+ to BIAS so a broken or disconnected RTDIN+ lead produces a full-scale RTD resistance measurement. [Source: MAX31865 RTD-to-Digital Converter, p. 21]
+The datasheet states that this RTDIN+ cable fault condition can go undetected depending on the values set in the fault threshold registers. If this condition is of interest, it recommends adding a 10 MOhm resistor from RTDIN+ to BIAS so a broken or disconnected RTDIN+ lead produces a full-scale RTD resistance measurement. [Source: MAX31865 RTD-to-Digital Converter, p. 21]
 
 ## Fault Decoding: 2-Wire Setups
 

@@ -1,15 +1,29 @@
-﻿# MAX31865 PDF Document Inventory
+# MAX31865 PDF Document Inventory
 
 ## Source Set
 
-Only PDF files now stored under `docs/source-pdfs/` were used. Non-PDF vendor/support files now stored under `docs/vendor-reference-code/` (`max31865_reference_code.c`, `max31865_reference_code.h`, `max31865_ibis_model.ibs`) were intentionally excluded because this extraction is required to be based only on PDFs.
+Only PDF files stored under `docs/source-pdfs/` were used. Non-PDF vendor/support
+files under `docs/vendor-reference-code/` were intentionally excluded.
 
-| File | Document title used in citations | Pages | Document type | Revision/date visible in PDF | Role in this extraction |
-|---|---:|---:|---|---|---|
-| `docs/source-pdfs/datasheets/max31865_datasheet_rev3_2015-07.pdf` | `MAX31865 RTD-to-Digital Converter` | 26 | Datasheet | `19-6478; Rev 3; 7/15` on p. 1; revision history lists Rev 3 dated `7/15` on p. 26 | Primary source for chip identity, pinout, electrical limits, timing, registers, SPI behavior, fault behavior, application circuits, ordering, and packages. [Source: MAX31865 RTD-to-Digital Converter, p. 1; MAX31865 RTD-to-Digital Converter, p. 26] |
-| `docs/source-pdfs/application-notes/maxim_design_solution_67_high_accuracy_temperature_measurement_rev0_2017-09.pdf` | `Achieve High-Accuracy Temperature Measurement in Your Precision Designs` | 4 | Design solution/application note | `Design Solutions No. 67`, `Rev 0; September 2017` on p. 4 | Supplemental source for RTD background, MAX31865-specific measurement formula, 2-/3-/4-wire examples, cable resistance discussion, and system-level claims. [Source: Achieve High-Accuracy Temperature Measurement in Your Precision Designs, p. 4] |
-| `docs/source-pdfs/application-notes/maxim_temperature_sensor_tutorial_rev0_2017-09.pdf` | `Temperature Sensor Tutorial` | 10 | Tutorial | `Rev. 0; September 2017` on p. 10 | Supplemental source for RTD background, Callendar-Van Dusen coefficients, and MAX31865 two-/three-/four-wire configuration figure. [Source: Temperature Sensor Tutorial, p. 5; Temperature Sensor Tutorial, p. 7; Temperature Sensor Tutorial, p. 10] |
-| `docs/source-pdfs/application-notes/maxrefdes42_iolink_rtd_temp_sensor_quick_start_iq2_rev0_2015-01.pdf` | `MAXREFDES42# IO-Link RTD Temp Sensor Quick Start Guide (IQ2 IO-Link Master Version)` | 20 | Reference design quick-start guide | `Rev 0; 1/15` on p. 1; revision history lists `0`, `1/15`, `Initial release` on p. 20 | Supplemental, module-level source for MAXREFDES42 IO-Link index reads that expose MAX31865 RTD code and ambient temperature values. [Source: MAXREFDES42# IO-Link RTD Temp Sensor Quick Start Guide (IQ2 IO-Link Master Version), p. 1; MAXREFDES42# IO-Link RTD Temp Sensor Quick Start Guide (IQ2 IO-Link Master Version), p. 15; MAXREFDES42# IO-Link RTD Temp Sensor Quick Start Guide (IQ2 IO-Link Master Version), p. 16; MAXREFDES42# IO-Link RTD Temp Sensor Quick Start Guide (IQ2 IO-Link Master Version), p. 17; MAXREFDES42# IO-Link RTD Temp Sensor Quick Start Guide (IQ2 IO-Link Master Version), p. 18; MAXREFDES42# IO-Link RTD Temp Sensor Quick Start Guide (IQ2 IO-Link Master Version), p. 19; MAXREFDES42# IO-Link RTD Temp Sensor Quick Start Guide (IQ2 IO-Link Master Version), p. 20] |
+### Primary Datasheet
+
+- File: `docs/source-pdfs/datasheets/max31865_datasheet_rev3_2015-07.pdf`
+- Citation title: `MAX31865 RTD-to-Digital Converter`
+- Pages: 26
+- Revision/date: `19-6478; Rev 3; 7/15`
+- Role: primary source for chip identity, pinout, electrical limits, timing,
+  registers, SPI behavior, fault behavior, application circuits, ordering, and
+  packages. [Source: MAX31865 RTD-to-Digital Converter, pp. 1, 26]
+
+### Supplemental PDFs
+
+| File | Title | Pages | Role |
+|---|---|---:|---|
+| `docs/source-pdfs/application-notes/maxim_design_solution_67_high_accuracy_temperature_measurement_rev0_2017-09.pdf` | `Achieve High-Accuracy Temperature Measurement in Your Precision Designs` | 4 | RTD background, MAX31865 measurement formula, wiring examples, cable-resistance discussion. |
+| `docs/source-pdfs/application-notes/maxim_temperature_sensor_tutorial_rev0_2017-09.pdf` | `Temperature Sensor Tutorial` | 10 | RTD background, Callendar-Van Dusen coefficients, and MAX31865 wiring figure. |
+| `docs/source-pdfs/application-notes/maxrefdes42_iolink_rtd_temp_sensor_quick_start_iq2_rev0_2015-01.pdf` | `MAXREFDES42# IO-Link RTD Temp Sensor Quick Start Guide` | 20 | Module-level IO-Link index reads exposing MAX31865 RTD code and ambient temperature values. |
+
+Supplemental citations are kept in the topic files where those facts are used.
 
 ## Output Navigation Index
 
@@ -22,8 +36,8 @@ Only PDF files now stored under `docs/source-pdfs/` were used. Non-PDF vendor/su
 | `04_protocol_commands_and_transactions.md` | SPI interface mode requirements; CPOL/CPHA behavior; read/write address-byte rules; register read/write address scheme; single-byte and multibyte transfer behavior; auto-increment/wrap behavior; invalid-address behavior; read-only write behavior; MAXREFDES42 IO-Link index transactions. |
 | `05_register_map.md` | Full documented eight-register map; addresses; write addresses; POR states; access; configuration register bit fields and side effects; RTD data register format; fault threshold register format; fault status register bit meanings; documented reserved/don't-care fields. |
 | `06_modes_interrupts_status_and_faults.md` | Conversion modes; VBIAS behavior; one-shot behavior; filter-select behavior; DRDY; fault-detection classes; automatic/manual fault-detection cycles; fault latching/clearing; overvoltage/undervoltage behavior; 2-/3-/4-wire fault decoding tables. |
-| `07_initialization_reset_and_operational_notes.md` | Power-up/POR behavior; POR register states; startup and settling delays; single-conversion sequencing facts; fault-detection sequencing facts; decoupling; input-filter notes; RTDIN+ cable-fault workaround; temperature example table for PT100 with 400 Ω RREF. |
-| `08_variant_differences_and_open_questions.md` | Ordering table; package code/outline/land-pattern table; revision history; variant/package differences; cross-document conflicts or ambiguities; mandatory known-unknowns/gaps list. |
+| `07_initialization_reset_and_operational_notes.md` | Power-up/POR behavior; POR register states; startup and settling delays; single-conversion sequencing facts; fault-detection sequencing facts; decoupling; input-filter notes; RTDIN+ cable-fault workaround; temperature example table for PT100 with 400 Ohm RREF. |
+| `08_variant_differences_and_open_questions.md` | Ordering table; package code/outline/land-pattern table; revision history; variant/package differences; cross-document conflicts or ambiguities; facts not found in the PDFs. |
 
 ## Source Authority Policy
 
@@ -50,7 +64,7 @@ The datasheet is treated as primary for chip-level electrical limits, timing, re
 | Default states and power-up behavior | Covered in `05_register_map.md` and `07_initialization_reset_and_operational_notes.md`. |
 | Initialization requirements | Covered as documented timing/sequencing facts in `07_initialization_reset_and_operational_notes.md`. |
 | Interrupt/status/event behavior | DRDY and latched fault status covered in `02_pinout_and_signals.md`, `05_register_map.md`, and `06_modes_interrupts_status_and_faults.md`; no interrupt controller beyond DRDY is documented in the PDFs. |
-| FIFO/buffer behavior | No FIFO or buffer behavior found in the PDFs; recorded as a known unknown/gap in `08_variant_differences_and_open_questions.md`. |
+| FIFO/buffer behavior | No FIFO or host-readable sample buffer behavior found in the PDFs; the precise missing fact is recorded in `08_variant_differences_and_open_questions.md`. |
 | Calibration/trimming/configuration | Configuration bits and RTD conversion formulas covered in `05_register_map.md` and `07_initialization_reset_and_operational_notes.md`; no chip trimming registers found. |
 | Operating modes/power modes | Covered in `05_register_map.md`, `06_modes_interrupts_status_and_faults.md`, and `07_initialization_reset_and_operational_notes.md`. |
 | Clocks/oscillator requirements | SPI clock requirements covered in `03_electrical_and_timing.md` and `04_protocol_commands_and_transactions.md`; no external oscillator requirement found. |
@@ -62,6 +76,11 @@ The datasheet is treated as primary for chip-level electrical limits, timing, re
 
 ## Pass Review Notes
 
-Pass 1 identified four PDFs, with `max31865_datasheet_rev3_2015-07.pdf` as the primary datasheet. Pass 2 extracted datasheet tables, register descriptions, timing, pin tables, and figures, then extracted only MAX31865-relevant facts from the supplementary documents. Pass 3 merged overlapping facts and marked supplementary additions. Pass 4 identified gaps such as absent CRC, absent FIFO, absent chip ID, and limited reserved-bit guidance. Pass 5 re-read targeted sections around pages 13-19 and 21-24 of the datasheet plus the MAXREFDES42 pages 15-18. Pass 6/7 audit findings are reflected in `08_variant_differences_and_open_questions.md`.
+Pass 1 identified four PDFs, with `max31865_datasheet_rev3_2015-07.pdf` as the
+primary datasheet. Later passes extracted the datasheet tables, register
+descriptions, timing, pin tables, and figures, then added only MAX31865-relevant
+supplemental facts. Targeted re-reads covered datasheet pages 13-19 and 21-24
+plus MAXREFDES42 pages 15-18. Audit findings are reflected in
+`08_variant_differences_and_open_questions.md`.
 
 A second diligence pass re-read the datasheet figure/text map and the supplemental MAX31865-specific passages, then added missed details for ADC saturation behavior, block-diagram connections, exact typical-operating-characteristic plot axes/labels, DRDY operation figure sequencing, application-circuit pin ties, supplemental PT100 range/linearity statements, and fault-flowchart delay sequencing.

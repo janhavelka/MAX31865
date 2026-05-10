@@ -14,15 +14,16 @@ output.
   Arduino/PlatformIO to an ESP-IDF component.
 - [Vendor reference material](vendor-reference-code/README.md) - copied
   Maxim/Analog Devices reference files used for comparison.
-- [Extracted source notes](extracted-md/00_document_inventory.md) - factual
-  datasheet and application-note extraction for later driver work.
+- [Extracted source notes](extracted-md/00_document_inventory.md) - compact
+  curated datasheet and application-note notes for later driver work.
 
 ## Directory Map
 
 - `source-pdfs/datasheets/` - primary device datasheets.
 - `source-pdfs/application-notes/` - supplementary Maxim/Analog Devices
   application notes and articles.
-- `extracted-md/` - generated factual Markdown extracted from the PDFs.
+- `extracted-md/` - compact curated notes synthesized from the PDFs.
+- `pdf-extracted-md/` - raw generated Markdown extracted from the PDFs.
 - `vendor-reference-code/` - copied vendor-style reference files.
 - `generated/` - Doxygen output.
 
@@ -37,6 +38,7 @@ pages and regenerate.
 - Use lowercase, hyphen-separated Markdown filenames.
 - Name each guide by its job, not by an internal acronym.
 - Keep source PDFs under `source-pdfs/`.
-- Keep extracted Markdown under `extracted-md/`.
+- Keep compact notes under `extracted-md/` and raw PDF extracts under
+  `pdf-extracted-md/`.
 - Keep vendor reference material under `vendor-reference-code/`.
 - Keep generated documentation under `generated/`.

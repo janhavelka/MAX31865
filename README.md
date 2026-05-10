@@ -10,15 +10,15 @@ directly.
 
 ## Start Here
 
-- [API overview](docs/api-overview.md): public headers, wiring, quick start,
+- <a href="docs/api-overview.md">API overview</a>: public headers, wiring, quick start,
   diagnostics, conversion helpers, and fault handling.
-- [Repository contract](docs/repository-contract.md): project layout, API
+- <a href="docs/repository-contract.md">Repository contract</a>: project layout, API
   expectations, CLI baseline, and quality gates.
-- [ESP-IDF porting notes](docs/esp-idf-porting.md): migration path from the
+- <a href="docs/esp-idf-porting.md">ESP-IDF porting notes</a>: migration path from the
   current Arduino/PlatformIO runtime.
-- [Extracted source notes](docs/extracted-md/00_document_inventory.md): factual
+- <a href="docs/extracted-md/00_document_inventory.md">Extracted source notes</a>: factual
   MAX31865 datasheet and application-note extraction for implementation work.
-- [Vendor reference material](docs/vendor-reference-code/README.md): copied
+- <a href="docs/vendor-reference-code/README.md">Vendor reference material</a>: copied
   Maxim/Analog Devices reference files kept for comparison.
 
 ## Public Layout
@@ -32,7 +32,7 @@ directly.
 - Public API smoke build: `examples/02_api_smoke`
 - Hand-written docs: `docs/`
 - Source PDFs: `docs/source-pdfs/`
-- Extracted PDF notes: `docs/extracted-md/`
+- Compacted extracted notes: `docs/extracted-md/`; raw PDF extracts: `docs/pdf-extracted-md/`
 - Vendor reference material: `docs/vendor-reference-code/`
 - Generated Doxygen output: `docs/generated/`
 

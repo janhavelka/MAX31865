@@ -1,4 +1,4 @@
-﻿# Initialization, Reset, and Operational Notes
+# Initialization, Reset, and Operational Notes
 
 ## Power-On Reset and Default Register States
 
@@ -25,11 +25,11 @@ The SPI function table uses the mode label `Disable Reset` for CS high, with SCL
 
 VDD and DVDD are both recommended at 3.0 V min, 3.3 V typ, and 3.6 V max. [Source: MAX31865 RTD-to-Digital Converter, p. 2]
 
-The pin-description table states that DVDD should connect to a 3.3 V power supply and be bypassed to DGND with a 0.1 µF bypass capacitor. [Source: MAX31865 RTD-to-Digital Converter, p. 8]
+The pin-description table states that DVDD should connect to a 3.3 V power supply and be bypassed to DGND with a 0.1 uF bypass capacitor. [Source: MAX31865 RTD-to-Digital Converter, p. 8]
 
-The pin-description table states that VDD should connect to a 3.3 V power supply and be bypassed to GND1 with a 0.1 µF bypass capacitor. [Source: MAX31865 RTD-to-Digital Converter, p. 8]
+The pin-description table states that VDD should connect to a 3.3 V power supply and be bypassed to GND1 with a 0.1 uF bypass capacitor. [Source: MAX31865 RTD-to-Digital Converter, p. 8]
 
-The Applications Information section states that best results are achieved by decoupling VDD and DVDD with a 0.1 µF capacitor, using a high-quality ceramic surface-mount capacitor if possible. It states that surface-mount components minimize lead inductance and that ceramic capacitors tend to have adequate high-frequency response for decoupling applications. [Source: MAX31865 RTD-to-Digital Converter, p. 21]
+The Applications Information section states that best results are achieved by decoupling VDD and DVDD with a 0.1 uF capacitor, using a high-quality ceramic surface-mount capacitor if possible. It states that surface-mount components minimize lead inductance and that ceramic capacitors tend to have adequate high-frequency response for decoupling applications. [Source: MAX31865 RTD-to-Digital Converter, p. 21]
 
 GND2 is analog ground and should connect to GND1; GND1 is analog ground and should connect to GND2. [Source: MAX31865 RTD-to-Digital Converter, p. 8]
 
@@ -43,7 +43,7 @@ If VBIAS is off to reduce supply current between conversions, filter capacitors 
 
 Before initiating a one-shot conversion after enabling VBIAS from off, the datasheet states to enable VBIAS and wait at least 10.5 time constants of the input RC network plus an additional 1 ms. [Source: MAX31865 RTD-to-Digital Converter, p. 13]
 
-The electrical-characteristics note for 15-bit settling states that a wait of at least 10.5 input-RC time constants is required and that maximum startup time is calculated with a 10 kΩ reference resistor and a 0.1 µF capacitor across the RTD inputs. [Source: MAX31865 RTD-to-Digital Converter, p. 4]
+The electrical-characteristics note for 15-bit settling states that a wait of at least 10.5 input-RC time constants is required and that maximum startup time is calculated with a 10 kOhm reference resistor and a 0.1 uF capacitor across the RTD inputs. [Source: MAX31865 RTD-to-Digital Converter, p. 4]
 
 For operation in noisy environments, the datasheet states that a filter capacitor may be placed across the RTDIN+ and RTDIN- inputs. [Source: MAX31865 RTD-to-Digital Converter, p. 19]
 
@@ -51,7 +51,7 @@ After an overvoltage or undervoltage fault, after a fault-detection cycle, or af
 
 Settling-delay guidance differs by context: the one-shot/VBIAS text uses 10.5 time constants plus 1 ms, while the Applications Information text recommends five time constants plus 1 ms after faults, fault-detection cycles, or enabling VBIAS. This is recorded as an unresolved wording difference in `08_variant_differences_and_open_questions.md`. [Conflict: MAX31865 RTD-to-Digital Converter, p. 13 vs MAX31865 RTD-to-Digital Converter, p. 19]
 
-The typical application circuits label CI as 10 nF for a 1 kΩ RTD and 100 nF for a 100 Ω RTD. [Sources: MAX31865 RTD-to-Digital Converter, p. 1; MAX31865 RTD-to-Digital Converter, p. 24; Temperature Sensor Tutorial, p. 7]
+The typical application circuits label CI as 10 nF for a 1 kOhm RTD and 100 nF for a 100 Ohm RTD. [Sources: MAX31865 RTD-to-Digital Converter, p. 1; MAX31865 RTD-to-Digital Converter, p. 24; Temperature Sensor Tutorial, p. 7]
 
 ## Conversion Timing Facts
 
@@ -61,13 +61,13 @@ Continuous conversion time is 16.7 ms typ / 17.6 ms max with the 60 Hz notch and
 
 The first conversion after enabling continuous conversion mode takes a time equal to the single conversion time for the selected notch frequency. [Source: MAX31865 RTD-to-Digital Converter, p. 4]
 
-The automatic fault-detection cycle time is 550 µs typ / 600 µs max from CS high to cycle complete. [Source: MAX31865 RTD-to-Digital Converter, p. 3]
+The automatic fault-detection cycle time is 550 us typ / 600 us max from CS high to cycle complete. [Source: MAX31865 RTD-to-Digital Converter, p. 3]
 
 ## Reference Resistor and Ratio Notes
 
-The recommended operating conditions table allows RREF from 350 Ω min to 10 kΩ max. [Source: MAX31865 RTD-to-Digital Converter, p. 2]
+The recommended operating conditions table allows RREF from 350 Ohm min to 10 kOhm max. [Source: MAX31865 RTD-to-Digital Converter, p. 2]
 
-The datasheet states that a reference resistor equal to four times the RTD 0°C resistance is optimum for a platinum RTD; it gives 400 Ω for PT100 and 4 kΩ for PT1000. [Source: MAX31865 RTD-to-Digital Converter, p. 10]
+The datasheet states that a reference resistor equal to four times the RTD 0degC resistance is optimum for a platinum RTD; it gives 400 Ohm for PT100 and 4 kOhm for PT1000. [Source: MAX31865 RTD-to-Digital Converter, p. 10]
 
 The design solution states that the MAX31865 does not require an exact current source, because RTD current is a byproduct of the RRTD/RREF ratio, and that precision is dependent on the discrete RREF. [Source: Achieve High-Accuracy Temperature Measurement in Your Precision Designs, p. 3]
 
@@ -75,11 +75,11 @@ The design solution states that system stability depends on the RREF/RTD resisto
 
 ## Cable Resistance Notes
 
-The recommended operating conditions table allows RCABLE from 0 Ω to 50 Ω per lead. [Source: MAX31865 RTD-to-Digital Converter, p. 2]
+The recommended operating conditions table allows RCABLE from 0 Ohm to 50 Ohm per lead. [Source: MAX31865 RTD-to-Digital Converter, p. 2]
 
-For PT100, the datasheet states that 0.4 Ω series resistance causes approximately 1°C error. [Source: MAX31865 RTD-to-Digital Converter, p. 10]
+For PT100, the datasheet states that 0.4 Ohm series resistance causes approximately 1degC error. [Source: MAX31865 RTD-to-Digital Converter, p. 10]
 
-The design solution states that reasonable RCABLE values can be as high as 50 Ω, and that a 2-wire RTD with 10 Ω cable resistance creates approximately 25°C error across the entire PT100 temperature range. [Source: Achieve High-Accuracy Temperature Measurement in Your Precision Designs, p. 2]
+The design solution states that reasonable RCABLE values can be as high as 50 Ohm, and that a 2-wire RTD with 10 Ohm cable resistance creates approximately 25degC error across the entire PT100 temperature range. [Source: Achieve High-Accuracy Temperature Measurement in Your Precision Designs, p. 2]
 
 The design solution states that 3-wire and 4-wire RTD hardware implementations significantly reduce these cable-resistance errors. [Source: Achieve High-Accuracy Temperature Measurement in Your Precision Designs, p. 2]
 
@@ -87,7 +87,7 @@ The design solution states that 3-wire and 4-wire RTD hardware implementations s
 
 In 3-wire and 4-wire RTD configurations, a broken or disconnected RTDIN+ cable leaves the ADC+ input unbiased, causing unpredictable ADC conversion results that can be influenced by PCB layout, external circuit noise, and ambient temperature. [Source: MAX31865 RTD-to-Digital Converter, p. 21]
 
-This cable-fault condition can go undetected depending on fault-threshold register values. The datasheet states that adding a 10 MΩ resistor from RTDIN+ to BIAS causes a broken or disconnected RTDIN+ lead to produce a full-scale RTD resistance measurement. [Source: MAX31865 RTD-to-Digital Converter, p. 21]
+This cable-fault condition can go undetected depending on fault-threshold register values. The datasheet states that adding a 10 MOhm resistor from RTDIN+ to BIAS causes a broken or disconnected RTDIN+ lead to produce a full-scale RTD resistance measurement. [Source: MAX31865 RTD-to-Digital Converter, p. 21]
 
 ## RTD Resistance and Temperature Conversion
 
@@ -101,25 +101,25 @@ where `ADC Code` is the 15-bit ADC result from RTD Data registers 01h-02h and `R
 
 The design solution gives the same formula as Equation 2. [Source: Achieve High-Accuracy Temperature Measurement in Your Precision Designs, p. 3]
 
-The design solution states that PT100 resistance over temperature ranges from 18.52 Ω at -200°C to 390 Ω at +850°C. [Source: Achieve High-Accuracy Temperature Measurement in Your Precision Designs, p. 2]
+The design solution states that PT100 resistance over temperature ranges from 18.52 Ohm at -200degC to 390 Ohm at +850degC. [Source: Achieve High-Accuracy Temperature Measurement in Your Precision Designs, p. 2]
 
 The design solution states that the maximum RTD end-point linearity error from the Callendar-Van Dusen equation is approximately 4.34% for PT100 or PT1000. [Source: Achieve High-Accuracy Temperature Measurement in Your Precision Designs, p. 2]
 
-For the range -100°C to +100°C, the datasheet provides this approximation:
+For the range -100degC to +100degC, the datasheet provides this approximation:
 
 ```text
-Temperature (°C) ~= (ADC code / 32) - 256
+Temperature (degC) ~= (ADC code / 32) - 256
 ```
 
-The datasheet states this approximation gives 0°C error at 0°C, -1.75°C error at -100°C, and -1.4°C error at +100°C, assuming an IEC751 RTD and RREF equal to four times the 0°C RTD resistance. [Source: MAX31865 RTD-to-Digital Converter, p. 11]
+The datasheet states this approximation gives 0degC error at 0degC, -1.75degC error at -100degC, and -1.4degC error at +100degC, assuming an IEC751 RTD and RREF equal to four times the 0degC RTD resistance. [Source: MAX31865 RTD-to-Digital Converter, p. 11]
 
 For high precision, the datasheet states to use the Callendar-Van Dusen equation or a lookup table to correct predictable RTD nonlinearity. [Source: MAX31865 RTD-to-Digital Converter, p. 11]
 
-## PT100 with 400 Ω RREF Temperature Example
+## PT100 with 400 Ohm RREF Temperature Example
 
-The datasheet states that in the typical case of a PT100 RTD with a 400 Ω high-precision, low-drift reference resistor, Table 9 gives temperature/resistance/ADC examples. [Source: MAX31865 RTD-to-Digital Converter, p. 20]
+The datasheet states that in the typical case of a PT100 RTD with a 400 Ohm high-precision, low-drift reference resistor, Table 9 gives temperature/resistance/ADC examples. [Source: MAX31865 RTD-to-Digital Converter, p. 20]
 
-| Temperature (°C) | RTD resistance (Ω) | RTD Data Reg (01h-02h) hex | ADC code (dec) | ADC code/32 - 256 (°C) | Source |
+| Temperature (degC) | RTD resistance (Ohm) | RTD Data Reg (01h-02h) hex | ADC code (dec) | ADC code/32 - 256 (degC) | Source |
 |---:|---:|---:|---:|---:|---|
 | -200 | 18.52 | 0BDAh | 1517 | -208.59 | [Source: MAX31865 RTD-to-Digital Converter, p. 20] |
 | -175 | 29.22 | 12B4h | 2394 | -181.19 | [Source: MAX31865 RTD-to-Digital Converter, p. 20] |

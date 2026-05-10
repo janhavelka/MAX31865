@@ -1,4 +1,4 @@
-﻿# Register Map
+# Register Map
 
 ## Register Access Model
 
@@ -35,7 +35,7 @@ POR state is `00h`. [Source: MAX31865 RTD-to-Digital Converter, p. 13]
 | D6 | Conversion mode | 0 | `1` = Auto; `0` = Normally off. | Writing 1 selects automatic conversion mode with continuous conversions at a 50/60 Hz rate. Writing 0 exits automatic conversion mode and enters Normally Off mode; one-shot conversions may be initiated from Normally Off mode. | [Source: MAX31865 RTD-to-Digital Converter, p. 13] |
 | D5 | 1-shot | 0 | `1` = one-shot; auto-clear. | In Normally Off mode, writing 1 starts a single resistance conversion. Conversion triggers when CS goes high after writing 1; for multibyte writes it triggers when CS goes high at the transaction end. If VBIAS is off between conversions, input filter capacitors must charge before an accurate conversion. | [Source: MAX31865 RTD-to-Digital Converter, p. 13] |
 | D4 | 3-wire | 0 | `1` = 3-wire RTD; `0` = 2-wire or 4-wire. | In 3-wire mode, the voltage between FORCE+ and RTDIN+ is subtracted from `(RTDIN+ - RTDIN-)` to compensate IR errors from using one wire for FORCE- and RTDIN-. | [Source: MAX31865 RTD-to-Digital Converter, p. 14] |
-| D3:D2 | Fault Detection Cycle Control | 00b | See fault-detection cycle control table below. | If an external RTD input filter has a time constant greater than 100 µs, the fault-detection cycle timing should be controlled in manual mode. | [Source: MAX31865 RTD-to-Digital Converter, p. 14] |
+| D3:D2 | Fault Detection Cycle Control | 00b | See fault-detection cycle control table below. | If an external RTD input filter has a time constant greater than 100 us, the fault-detection cycle timing should be controlled in manual mode. | [Source: MAX31865 RTD-to-Digital Converter, p. 14] |
 | D1 | Fault Status Clear | 0 | `1` = clear; auto-clear. | Write 1 while writing 0 to D5, D3, and D2 to return all fault status bits D[7:2] in the Fault Status register to 0. D1 self-clears to 0. Fault Status bit D2 and RTD LSB bit D0 may set again immediately if an over/undervoltage fault persists. | [Source: MAX31865 RTD-to-Digital Converter, p. 14] |
 | D0 | 50/60 Hz filter select | 0 | `1` = 50 Hz; `0` = 60 Hz. | Selects notch frequencies for the noise rejection filter. Write 0 to reject 60 Hz and harmonics; write 1 to reject 50 Hz and harmonics. The datasheet notes not to change notch frequency while in auto conversion mode. | [Source: MAX31865 RTD-to-Digital Converter, p. 14] |
 
@@ -98,7 +98,12 @@ The High Fault Threshold and Low Fault Threshold registers select trip threshold
 
 The RTD Data Registers, High Fault Threshold Registers, and Low Fault Threshold Registers all have the same format. [Source: MAX31865 RTD-to-Digital Converter, p. 16]
 
-The body text states that RTD High is set if the RTD resistance register value is greater than or equal to the High Fault Threshold register value, and RTD Low is set if the RTD resistance value is less than or equal to the Low Fault Threshold register value. Other fault-flow/table wording uses `>` and `<`; this conflict is listed in `08_variant_differences_and_open_questions.md`. [Conflict: MAX31865 RTD-to-Digital Converter, p. 16 vs MAX31865 RTD-to-Digital Converter, p. 11; MAX31865 RTD-to-Digital Converter, p. 12; MAX31865 RTD-to-Digital Converter, p. 22; MAX31865 RTD-to-Digital Converter, p. 23]
+The threshold body text uses inclusive comparisons: RTD High is set when the
+RTD value is greater than or equal to the high threshold, and RTD Low is set
+when the RTD value is less than or equal to the low threshold. Other fault-flow
+wording uses strict `>` and `<`; this conflict is listed in
+`08_variant_differences_and_open_questions.md`. [Conflict: MAX31865 datasheet,
+p. 16 vs pp. 11-12, 22-23]
 
 POR value for the High Fault Threshold register is `FFFFh`; POR value for the Low Fault Threshold register is `0000h`. [Source: MAX31865 RTD-to-Digital Converter, p. 16]
 

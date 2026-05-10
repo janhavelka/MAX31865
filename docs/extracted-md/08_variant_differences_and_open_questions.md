@@ -1,4 +1,4 @@
-﻿# Variant Differences and Open Questions
+# Variant Differences and Open Questions
 
 ## Ordering Information
 
@@ -6,10 +6,10 @@
 
 | Part | Temperature range | Pin-package | Notes | Source |
 |---|---|---|---|---|
-| MAX31865AAP+ | -40°C to +125°C | 20 SSOP | Lead(Pb)-free/RoHS-compliant package. | [Source: MAX31865 RTD-to-Digital Converter, p. 25] |
-| MAX31865AAP+T | -40°C to +125°C | 20 SSOP | Lead(Pb)-free/RoHS-compliant package; tape and reel. | [Source: MAX31865 RTD-to-Digital Converter, p. 25] |
-| MAX31865ATP+ | -40°C to +125°C | 20 TQFN-EP | Lead(Pb)-free/RoHS-compliant package; exposed pad. | [Source: MAX31865 RTD-to-Digital Converter, p. 25] |
-| MAX31865ATP+T | -40°C to +125°C | 20 TQFN-EP | Lead(Pb)-free/RoHS-compliant package; tape and reel; exposed pad. | [Source: MAX31865 RTD-to-Digital Converter, p. 25] |
+| MAX31865AAP+ | -40degC to +125degC | 20 SSOP | Lead(Pb)-free/RoHS-compliant package. | [Source: MAX31865 RTD-to-Digital Converter, p. 25] |
+| MAX31865AAP+T | -40degC to +125degC | 20 SSOP | Lead(Pb)-free/RoHS-compliant package; tape and reel. | [Source: MAX31865 RTD-to-Digital Converter, p. 25] |
+| MAX31865ATP+ | -40degC to +125degC | 20 TQFN-EP | Lead(Pb)-free/RoHS-compliant package; exposed pad. | [Source: MAX31865 RTD-to-Digital Converter, p. 25] |
+| MAX31865ATP+T | -40degC to +125degC | 20 TQFN-EP | Lead(Pb)-free/RoHS-compliant package; tape and reel; exposed pad. | [Source: MAX31865 RTD-to-Digital Converter, p. 25] |
 
 ## Package Information
 
@@ -34,23 +34,23 @@ Pin numbers differ between TQFN and SSOP, as documented in the pin-description t
 |---:|---|---|---|---|
 | 0 | 10/12 | Initial release | - | [Source: MAX31865 RTD-to-Digital Converter, p. 26] |
 | 1 | 1/15 | Revised Benefits and Features section | 1 | [Source: MAX31865 RTD-to-Digital Converter, p. 26] |
-| 2 | 5/15 | Added the SSOP package to the datasheet and updated input voltage protection as ±45 V. | 1, 2, 7, 10, 11, 24 | [Source: MAX31865 RTD-to-Digital Converter, p. 26] |
+| 2 | 5/15 | Added the SSOP package to the datasheet and updated input voltage protection as +/-45 V. | 1, 2, 7, 10, 11, 24 | [Source: MAX31865 RTD-to-Digital Converter, p. 26] |
 | 3 | 7/15 | Updated Table 6 | 16 | [Source: MAX31865 RTD-to-Digital Converter, p. 26] |
 
 ## Cross-Document Conflicts and Ambiguities
 
 | Topic | Conflict or ambiguity | Source references |
 |---|---|---|
-| Threshold comparison operators | The fault-threshold body text says RTD High is set when the RTD resistance register value is greater than or equal to the High Fault Threshold value and RTD Low is set when RTD resistance is less than or equal to the Low Fault Threshold value. The flowchart/fault-decoding tables use greater-than and less-than wording. | [Conflict: MAX31865 RTD-to-Digital Converter, p. 16 vs MAX31865 RTD-to-Digital Converter, p. 11; MAX31865 RTD-to-Digital Converter, p. 12; MAX31865 RTD-to-Digital Converter, p. 22; MAX31865 RTD-to-Digital Converter, p. 23] |
+| Threshold comparison operators | Register text uses inclusive high/low threshold comparisons; flowchart and decoding tables use strict greater-than/less-than wording. | [Conflict: MAX31865 datasheet, p. 16 vs pp. 11-12, 22-23] |
 | Settling delay after enabling VBIAS | The one-shot section says that if VBIAS was off, enable VBIAS and wait at least 10.5 input-RC time constants plus 1 ms before initiating conversion. The Applications Information section recommends at least five time constants plus 1 ms after an overvoltage/undervoltage fault, after a fault-detection cycle, or after enabling VBIAS. | [Conflict: MAX31865 RTD-to-Digital Converter, p. 13 vs MAX31865 RTD-to-Digital Converter, p. 19] |
 | DRDY high timing | The AC timing table defines `Address 01h or 02h Decoded to DRDY High` (`tDRDYH`) as 50 ns after RTD register read access. The DRDY section states that DRDY returns high when a read operation of the RTD Data Registers completes. | [Conflict: MAX31865 RTD-to-Digital Converter, p. 4 vs MAX31865 RTD-to-Digital Converter, p. 19] |
 | SSOP pin 19 name | The SSOP pin-configuration figure labels pin 19 as `GND`, while the pin-description table identifies SSOP pin 19 as `GND1`. | [Conflict: MAX31865 RTD-to-Digital Converter, p. 7 vs MAX31865 RTD-to-Digital Converter, p. 8] |
-| RTD alpha/coefficient wording in design solution | The design solution states a platinum RTD coefficient of 0.00385 Ω/Ω/°C on p. 1 and later states 0.003925 Ω/Ω/°C on p. 2. The datasheet separately lists alpha values 0.00385 and 0.00392 for IEC 751 (PT100) and SAMA standards. | [Conflict: Achieve High-Accuracy Temperature Measurement in Your Precision Designs, p. 1 vs Achieve High-Accuracy Temperature Measurement in Your Precision Designs, p. 2; Source: MAX31865 RTD-to-Digital Converter, p. 10] |
-| Measurement range versus IC operating range | The design solution says the MAX31865 with an RTD provides 0.03125°C resolution across a -200°C to +850°C temperature range with 0.5°C accuracy, and also says the MAX31865 has 0.5°C accuracy over a -200°C to 850°C range. The datasheet operating temperature range for the IC is -40°C to +125°C, and the datasheet separately discusses RTD resistance over broader RTD temperatures. The design solution wording does not distinguish the sensed RTD temperature range from the IC ambient operating range in those statements. | [Conflict: Achieve High-Accuracy Temperature Measurement in Your Precision Designs, p. 3; Achieve High-Accuracy Temperature Measurement in Your Precision Designs, p. 4 vs MAX31865 RTD-to-Digital Converter, p. 2; MAX31865 RTD-to-Digital Converter, p. 10; MAX31865 RTD-to-Digital Converter, p. 25] |
-| MAXREFDES42 IO-Link index 261 scaling | The quick-start guide states that index 261 is the MAX31865 RTD code register value variable and that the readback is shifted by 1 bit and must be divided by two. This is documented for the MAXREFDES42 IO-Link/IODD context and is not part of the bare MAX31865 SPI register-map text. | [Sources: MAXREFDES42# IO-Link RTD Temp Sensor Quick Start Guide (IQ2 IO-Link Master Version), p. 15; MAXREFDES42# IO-Link RTD Temp Sensor Quick Start Guide (IQ2 IO-Link Master Version), p. 16; MAX31865 RTD-to-Digital Converter, p. 15] |
+| RTD alpha/coefficient wording in design solution | The design solution gives 0.00385 ohm/ohm/degC on p. 1 and 0.003925 ohm/ohm/degC on p. 2. The datasheet separately lists 0.00385 and 0.00392 alpha values for IEC 751 and SAMA. | [Conflict: Design Solution 67, pp. 1-2; Source: MAX31865 datasheet, p. 10] |
+| Measurement range versus IC operating range | The design solution describes the sensed RTD range as -200 degC to +850 degC. The datasheet IC operating range is -40 degC to +125 degC, so driver notes must not treat RTD sensing range as IC ambient range. | [Conflict: Design Solution 67, pp. 3-4 vs MAX31865 datasheet, pp. 2, 10, 25] |
+| MAXREFDES42 IO-Link index 261 scaling | In the MAXREFDES42 module context, index 261 is shifted by one bit and divided by two. This is not part of the bare MAX31865 SPI register map. | [Sources: MAXREFDES42 quick start, pp. 15-16; MAX31865 datasheet, p. 15] |
 | Timing Note 8 units | Note 8 in the datasheet states measurements use `10 ms maximum rise and fall times`. This extraction preserves the PDF text and does not reinterpret it. | [Source: MAX31865 RTD-to-Digital Converter, p. 4] |
 
-## Known Unknowns and Missing Data
+## Facts Not Documented in the PDFs
 
 These items were not found in the provided PDFs and should not be invented by a later implementation agent.
 
@@ -69,7 +69,7 @@ These items were not found in the provided PDFs and should not be invented by a 
 | Threshold-selection procedure for specific RTD fault temperatures | Threshold registers and compare behavior are documented, but the PDFs do not prescribe threshold values for particular sensors or temperatures. | [Source: MAX31865 RTD-to-Digital Converter, p. 16] |
 | Fault clear completion timing | The Configuration register clear bit self-clears and clears Fault Status D[7:2], but no explicit timing for clear completion is provided. | [Source: MAX31865 RTD-to-Digital Converter, p. 14] |
 | Thermistor temperature conversion | The datasheet states thermistors may be used and that output data is sensor resistance/reference resistance; no thermistor-specific temperature equation or table is provided. | [Source: MAX31865 RTD-to-Digital Converter, p. 11] |
-| Maximum external input filter value | The datasheet gives settling-time rules and says manual fault-detection timing should be used if the input-filter time constant exceeds 100 µs, but no absolute maximum filter capacitance is specified. | [Sources: MAX31865 RTD-to-Digital Converter, p. 14; MAX31865 RTD-to-Digital Converter, p. 19] |
+| Maximum external input filter value | The datasheet gives settling-time rules and says manual fault-detection timing should be used if the input-filter time constant exceeds 100 us, but no absolute maximum filter capacitance is specified. | [Sources: MAX31865 RTD-to-Digital Converter, p. 14; MAX31865 RTD-to-Digital Converter, p. 19] |
 | Nonvolatile memory or stored calibration | No nonvolatile configuration, EEPROM, trim, or calibration registers are listed. | [Source: MAX31865 RTD-to-Digital Converter, p. 13] |
 | Multi-device chip addressing | The SPI interface uses CS for selection and does not document address pins or in-band device addressing. | [Sources: MAX31865 RTD-to-Digital Converter, p. 7; MAX31865 RTD-to-Digital Converter, p. 8; MAX31865 RTD-to-Digital Converter, p. 16; MAX31865 RTD-to-Digital Converter, p. 17; MAX31865 RTD-to-Digital Converter, p. 18] |
 | Broadcast addressing | No broadcast mechanism is documented. | [Source: MAX31865 RTD-to-Digital Converter, p. 16; MAX31865 RTD-to-Digital Converter, p. 17; MAX31865 RTD-to-Digital Converter, p. 18] |
