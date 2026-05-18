@@ -64,6 +64,12 @@ typedef struct MAX31865Status {
     /// True when code is MAX31865Error::Ok.
     bool ok() const { return code == MAX31865Error::Ok; }
 
+    /// Alias for ok(), matching shared status helper naming.
+    bool isOk() const { return ok(); }
+
+    /// MAX31865 public operations complete synchronously today.
+    bool inProgress() const { return false; }
+
     /// Construct an OK status.
     static MAX31865Status Ok() {
         MAX31865Status status = {MAX31865Error::Ok, "OK", 0};

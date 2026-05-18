@@ -222,6 +222,7 @@ static void printHelp() {
     cli::printHelpItem("temp", "Read one temperature sample");
     cli::printHelpItem("stats", "Print sample and health counters");
     cli::printHelpItem("fault", "Read decoded fault status");
+    cli::printHelpItem("faultdecode <raw>", "Decode a raw fault-status byte");
     cli::printHelpItem("clear", "Clear fault latch");
     cli::printHelpItem("faultauto", "Run automatic fault-detection cycle");
     cli::printHelpItem("faultmanual [us]", "Run manual fault cycle with settle delay");
@@ -1094,6 +1095,17 @@ static void handleCommand(char* line) {
     }
     if (strcmp(cmd, "fault") == 0) {
         printFault();
+        return;
+    }
+    if (strcmp(cmd, "faultdecode") == 0) {
+        uint32_t raw = 0;
+        if (!parseU32(strtok(nullptr, " \t\r\n"), &raw) || raw > 0xFFU) {
+            printUsage("faultdecode <0x00..0xFF>");
+            return;
+        }
+        MAX31865FaultStatus fault{};
+        (void)MAX31865::decodeFaultStatus(static_cast<uint8_t>(raw), fault);
+        printFaultDecoded(fault);
         return;
     }
     if (strcmp(cmd, "clear") == 0) {

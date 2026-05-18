@@ -81,6 +81,8 @@ public:
     MAX31865DriverState driverState() const { return _driverState; }
     /// Alias for driverState(), matching the unified example contract.
     MAX31865DriverState healthState() const { return _driverState; }
+    /// True after begin() succeeds and before end() is called.
+    bool isInitialized() const { return _initialized; }
     /// True when the driver is READY or DEGRADED.
     bool isOnline() const;
     /// Last tracked error code.
@@ -179,6 +181,7 @@ public:
     bool readSingle(MAX31865Sample& out, uint32_t timeoutMs = 200);
     /**
      * @brief Nonblocking sample read when conversion data is ready.
+     * @param out Converted sample output.
      * @return true when a sample was read. A simple not-ready condition returns
      * false without changing the health counters.
      */
@@ -195,6 +198,8 @@ public:
      */
     MAX31865Status readIfReady(MAX31865Sample& out);
     /// Read and convert the current RTD registers.
+    /// @param out Converted sample output.
+    /// @return true when RTD registers were read and converted.
     bool readSample(MAX31865Sample& out);
     /// Number of failed sample reads.
     size_t droppedCount() const { return _droppedCount; }
@@ -206,14 +211,23 @@ public:
     uint32_t keptSampleCount() const { return _keptSampleCount; }
 
     /// Read the raw RTD register pair.
+    /// @param out Raw register decode output.
+    /// @return true when both RTD bytes were read.
     bool readRawRtd(MAX31865RawRtd& out);
     /// Read resistance from an already-ready conversion.
+    /// @param[out] ohms Converted resistance.
+    /// @return true when a sample was read and converted.
     bool readResistance(float& ohms);
     /// Read temperature from an already-ready conversion.
+    /// @param[out] celsius Converted temperature.
+    /// @return true when a sample was read and converted.
     bool readTemperature(float& celsius);
     /// Read and decode the fault-status register.
+    /// @param[out] out Decoded fault status.
+    /// @return true when the fault-status register was read.
     bool readFaultStatus(MAX31865FaultStatus& out);
     /// Clear the latched fault-status register.
+    /// @return true when the CONFIG fault-clear write succeeds.
     bool clearFaults();
     /**
      * @brief Run the MAX31865 automatic fault-detection cycle.
@@ -239,23 +253,49 @@ public:
                                  uint32_t timeoutMs = 10);
 
     /// Program low/high thresholds as 15-bit RTD ADC codes.
+    /// @param lowCode Low threshold code; must be 0..32767.
+    /// @param highCode High threshold code; must be 0..32767.
+    /// @return true when all threshold bytes were written.
     bool setFaultThresholdsRaw(uint16_t lowCode, uint16_t highCode);
     /// Read low/high thresholds as 15-bit RTD ADC codes.
+    /// @param[out] out Threshold codes.
+    /// @return true when all threshold bytes were read.
     bool getFaultThresholdsRaw(MAX31865FaultThresholds& out);
     /// Program low/high thresholds in ohms.
+    /// @param lowOhms Low threshold resistance.
+    /// @param highOhms High threshold resistance.
+    /// @return true when values are finite and the raw thresholds are written.
     bool setFaultThresholdsResistance(float lowOhms, float highOhms);
     /// Read low/high thresholds in ohms.
+    /// @param[out] lowOhms Low threshold resistance.
+    /// @param[out] highOhms High threshold resistance.
+    /// @return true when raw thresholds were read and converted.
     bool getFaultThresholdsResistance(float& lowOhms, float& highOhms);
     /// Program low/high thresholds in Celsius.
+    /// @param lowC Low threshold temperature.
+    /// @param highC High threshold temperature.
+    /// @return true when values are finite and the raw thresholds are written.
     bool setFaultThresholdsTemperature(float lowC, float highC);
 
     /// Read one register for diagnostics, returning false on invalid address or bus failure.
+    /// @param addr Register address.
+    /// @param[out] value Register value.
+    /// @return true when the register was read.
     bool readReg(uint8_t addr, uint8_t& value);
     /// Read one register for diagnostics; returns 0xFF on failure for compact sketches.
+    /// @param addr Register address.
+    /// @return Register value, or 0xFF on failure.
     uint8_t readReg(uint8_t addr);
     /// Read a contiguous register range for diagnostics.
+    /// @param startAddr First register address.
+    /// @param[out] out Destination buffer.
+    /// @param len Number of registers to read.
+    /// @return true when the whole range was read.
     bool readRegs(uint8_t startAddr, uint8_t* out, size_t len);
     /// Write one writable register for diagnostics.
+    /// @param addr Writable register address.
+    /// @param value Value to write.
+    /// @return true when the register write succeeds.
     bool writeReg(uint8_t addr, uint8_t value);
     /**
      * @brief Write and verify one writable register for diagnostics.
@@ -268,6 +308,9 @@ public:
      */
     bool writeRegVerify(uint8_t addr, uint8_t value, uint8_t* readBack = nullptr);
     /// Dump the documented register map.
+    /// @param[out] out Destination rows.
+    /// @param max Capacity of out.
+    /// @return Number of rows written.
     size_t dumpRegisters(MAX31865RegisterDump* out, size_t max);
     /**
      * @brief Read and decode the current device settings.
@@ -275,6 +318,12 @@ public:
      * @return true when all documented registers were read.
      */
     bool getSettings(MAX31865Settings& out);
+    /**
+     * @brief Read and decode the current device settings with explicit status.
+     * @param out Register-derived settings snapshot.
+     * @return Ok when all documented registers were read, otherwise last operation status.
+     */
+    MAX31865Status getSettingsStatus(MAX31865Settings& out);
     /**
      * @brief Restore CONFIG and threshold registers to documented power-on defaults.
      * @return true when every writable reset value was written.
@@ -305,8 +354,13 @@ public:
     uint32_t getBiasSettleTimeUs() const;
 
     /// Convert a 15-bit RTD ADC code to full-scale ratio.
+    /// @param code 15-bit RTD ADC code.
+    /// @return code / 32768.0.
     static float codeToRatio(uint16_t code);
-    /// Decode the raw fault-status register; return true when any fault bit is set.
+    /// Decode the raw fault-status register.
+    /// @param raw Raw fault-status register value.
+    /// @param[out] out Decoded D7..D2 documented fault bits; D1..D0 are masked out.
+    /// @return true when any documented fault bit is set.
     static bool decodeFaultStatus(uint8_t raw, MAX31865FaultStatus& out);
 
 private:
@@ -319,6 +373,7 @@ private:
     bool transferRaw(const uint8_t* tx, uint8_t* rx, size_t len, bool recordHealth);
     bool lockSpi(bool recordHealth);
     void unlockSpi();
+    void resetBeginRuntimeState();
     bool waitForFaultCycleDone(uint32_t timeoutMs);
     bool conversionReady();
     bool cacheSample(MAX31865Sample& sample);
@@ -327,7 +382,6 @@ private:
     void setLastError(MAX31865Error error);
     void recordOk();
     void recordFailure(MAX31865Error error);
-    bool isInitialized() const { return _initialized; }
     uint32_t nowMs() const;
     void delayMs(uint32_t ms) const;
     void delayUs(uint32_t us) const;

@@ -167,6 +167,14 @@ MAX31865::~MAX31865() {
 }
 
 bool MAX31865::begin(const MAX31865BeginConfig& config) {
+    if (_initialized) {
+        end();
+    } else if (_spiMutex != nullptr) {
+        vSemaphoreDelete(_spiMutex);
+        _spiMutex = nullptr;
+    }
+    resetBeginRuntimeState();
+
     if (config.spi == nullptr || config.pins.cs < 0) {
         setFault(MAX31865Error::InvalidArgument);
         return false;
@@ -227,26 +235,16 @@ bool MAX31865::begin(const MAX31865BeginConfig& config) {
 
     _initialized = true;
     if (!applyConfig()) {
-        _initialized = false;
-        _driverState = MAX31865DriverState::UNINIT;
-        _spi = nullptr;
-        if (_spiMutex != nullptr) {
-            vSemaphoreDelete(_spiMutex);
-            _spiMutex = nullptr;
-        }
-        setFault(MAX31865Error::SpiTransferFailed);
+        const MAX31865Error error =
+            (_lastError == MAX31865Error::Ok) ? MAX31865Error::SpiTransferFailed : _lastError;
+        resetBeginRuntimeState();
+        setFault(error);
         return false;
     }
     if (config.verifyProbe) {
         const MAX31865Status probeStatus = probe();
         if (!probeStatus.ok()) {
-            _initialized = false;
-            _driverState = MAX31865DriverState::UNINIT;
-            _spi = nullptr;
-            if (_spiMutex != nullptr) {
-                vSemaphoreDelete(_spiMutex);
-                _spiMutex = nullptr;
-            }
+            resetBeginRuntimeState();
             setFault(probeStatus.code);
             return false;
         }
@@ -996,6 +994,10 @@ bool MAX31865::getSettings(MAX31865Settings& out) {
     return true;
 }
 
+MAX31865Status MAX31865::getSettingsStatus(MAX31865Settings& out) {
+    return getSettings(out) ? MAX31865Status::Ok() : lastOperationStatus();
+}
+
 bool MAX31865::resetRegisters() {
     if (!_initialized) {
         setFault(MAX31865Error::NotInitialized);
@@ -1228,6 +1230,51 @@ bool MAX31865::lockSpi(bool recordHealth) {
 void MAX31865::unlockSpi() {
     if (_spiMutex != nullptr) {
         xSemaphoreGive(_spiMutex);
+    }
+}
+
+void MAX31865::resetBeginRuntimeState() {
+    _spi = nullptr;
+    _csPin = -1;
+    _drdyPin = -1;
+    _initialized = false;
+    _state = MAX31865State::Uninitialized;
+    _driverState = MAX31865DriverState::UNINIT;
+    _lastError = MAX31865Error::Ok;
+    _consecutiveFailures = 0;
+    _totalFailures = 0;
+    _totalSuccess = 0;
+    _lastOkMs = 0;
+    _lastErrorMs = 0;
+    _referenceResistorOhms = 400.0f;
+    _rtdNominalOhms = 100.0f;
+    _coefficients = {3.90830e-3f, -5.77500e-7f, -4.18301e-12f};
+    _inputFilterTimeConstantUs = 0;
+    _wireMode = MAX31865WireMode::FourWire;
+    _filter = MAX31865Filter::Hz60;
+    _biasEnabled = false;
+    _autoConvert = false;
+    _conversionStarted = false;
+    _autoFirstConversionPending = false;
+    _sampleAvailable = false;
+    _conversionStartMs = 0;
+    _sampleCounter = 0;
+    _lastSampleTimestampMs = 0;
+    _lastSample = MAX31865Sample{};
+    _lastSampleValid = false;
+    _totalReadCount = 0;
+    _keptSampleCount = 0;
+    _droppedCount = 0;
+    _overrunCount = 0;
+    _queueHighWater = 0;
+    _spiErrorCount = 0;
+    _drdyTimeoutCount = 0;
+    _spiLockTimeoutCount = 0;
+    _referenceAlarmCount = 0;
+    _lastFaultStatus = 0;
+    if (_spiMutex != nullptr) {
+        vSemaphoreDelete(_spiMutex);
+        _spiMutex = nullptr;
     }
 }
 

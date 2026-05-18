@@ -83,7 +83,8 @@ New code should prefer `MAX31865BeginConfig`.
 `examples/01_basic_bringup_cli` is the service and bringup tool. It covers bus
 probe, recovery, health/state output, register diagnostics, one-shot and
 continuous conversion, threshold configuration, fault cycles, streaming, and
-stress checks.
+stress checks. It also includes `faultdecode <raw>` to decode a captured
+fault-status byte without touching the SPI bus.
 
 `examples/02_api_smoke` is intentionally small. It exists to compile and link
 the public API surface in CI.
@@ -95,12 +96,14 @@ CI builds:
 - `ex_bringup_s3`
 - `ex_bringup_s2`
 - `ex_api_smoke_s3`
+- `native` Unity tests (`pio test -e native`)
 
 Validation scripts:
 
 ```bash
 python tools/check_core_timing_guard.py
 python tools/check_cli_contract.py
+pio test -e native
 python -c "import json; json.load(open('library.json'))"
 git diff --check
 ```
@@ -119,3 +122,13 @@ doxygen Doxyfile
 - Threshold APIs use the 15-bit ADC-code value, not the shifted register word.
 - One-shot reads use the datasheet settling rule of `10.5 * input RC + 1 ms`
   before starting conversion.
+
+## Runtime Diagnostics
+
+`isInitialized()` reports whether `begin()` completed successfully. Repeated or
+failed `begin()` calls reset runtime resources, counters, cached samples, and
+configuration readback state before retrying. `getSettingsStatus(settings)`
+returns an explicit `MAX31865Status` while reading and decoding current device
+settings. `MAX31865Status::isOk()` mirrors `ok()`, and
+`MAX31865Status::inProgress()` is provided for family-style status handling
+(always `false` for this synchronous driver).
