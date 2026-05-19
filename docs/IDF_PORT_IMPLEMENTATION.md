@@ -15,6 +15,9 @@ Date: 2026-05-19
 - Arduino headers and SPI/GPIO fallback code are compile-guarded behind
   `MAX31865_HAS_ARDUINO_BACKEND`.
 - Added root ESP-IDF component metadata and a basic ESP-IDF SPI example.
+- Added `scripts/check_idf_example_contract.py` to statically verify that the
+  IDF example uses native IDF SPI/GPIO/timing APIs and no Arduino compatibility
+  facade.
 
 ## Remaining Blockers
 

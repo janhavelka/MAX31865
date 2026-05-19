@@ -56,12 +56,23 @@ Rules:
 
 ## SPI Ownership and Transport
 
-- The library MUST NOT hard-code a global SPI bus. The caller supplies `SPIClass*` / `SPIClass&`.
-- The library may own MAX31865 chip-level framing, `/CS`, optional `/DRDY`, and register transactions after `begin()`.
+- The library MUST NOT hard-code a global SPI bus. Arduino callers may supply `SPIClass*` / `SPIClass&`; non-Arduino callers must use the transport callback backend.
+- The library may own MAX31865 chip-level framing, `/CS`, optional `/DRDY`, and register transactions after `begin()` only through the selected backend/adapter.
 - The library must not choose board pins internally; pins come from `MAX31865Pins` or explicit begin arguments.
 - SPI bus locking must be bounded by `MAX31865_SPI_LOCK_TIMEOUT_MS` or caller-configured values.
 - SPI transfer failures, lock timeouts, conversion timeouts, and decoded MAX31865 faults must update `lastError()` / `lastOperationStatus()` and health counters consistently.
 - Do not leak raw ESP-IDF/FreeRTOS/SPI failure details through the public API without mapping them to `MAX31865Error` or `MAX31865Status`.
+
+---
+
+## Framework Boundary and ESP-IDF Rules
+
+- Core/public headers must remain includable without Arduino when `MAX31865_HAS_ARDUINO_BACKEND=0`. New public APIs must not require Arduino types unless guarded for Arduino compatibility.
+- The core driver must use `MAX31865TransportConfig` for non-Arduino I/O; ESP-IDF bus/device setup remains application/example-owned.
+- Arduino fallback code may stay for source compatibility, but it must remain compile-guarded and must not leak into native IDF examples or component builds.
+- ESP-IDF examples must use native IDF APIs: `app_main`, `driver/spi_master.h`, `driver/gpio.h`, `esp_timer`, and FreeRTOS delays/yields. Do not use Arduino compatibility facades in IDF examples.
+- Preserve Arduino/IDF CLI or smoke parity in docs. When parity is intentionally narrower, document the exact missing commands/behaviors and why.
+- Update `scripts/check_idf_example_contract.py` whenever the IDF example structure changes.
 
 ---
 

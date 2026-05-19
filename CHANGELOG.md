@@ -41,6 +41,8 @@ and the project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - `MAX31865TransportConfig` callback backend for application-owned SPI, DRDY,
   timing, delay, and yield hooks.
 - ESP-IDF component metadata and a basic `spi_master` example.
+- `scripts/check_idf_example_contract.py` to guard the native ESP-IDF example
+  against Arduino compatibility facades and missing IDF dependencies.
 
 ### Changed
 - Public API now follows the I2C library layout: nested canonical header,

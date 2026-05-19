@@ -109,6 +109,7 @@ Validation scripts:
 ```bash
 python tools/check_core_timing_guard.py
 python tools/check_cli_contract.py
+python scripts/check_idf_example_contract.py
 pio test -e native
 python -c "import json; json.load(open('library.json'))"
 git diff --check

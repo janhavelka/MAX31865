@@ -187,6 +187,8 @@ pins, host, and device handles; the library owns MAX31865 protocol state.
   failure mapping.
 - Header compile tests for Arduino and ESP-IDF modes to catch accidental
   `SPIClass` leakage.
+- Static IDF example contract check:
+  `python scripts/check_idf_example_contract.py`.
 - IDF build tests for ESP32-S2 and ESP32-S3 with no Arduino framework.
 - Hardware smoke test: probe, configure 2/3/4-wire mode, one-shot read,
   continuous read with `tick`, fault cycle, DRDY read if wired.
