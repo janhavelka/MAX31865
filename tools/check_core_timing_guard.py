@@ -28,7 +28,7 @@ ALLOWED_CALL_COUNTS: Dict[str, Dict[str, int]] = {
         "millis": 1,
         "delay": 1,
         "delayMicroseconds": 1,
-        "yield": 2,
+        "yield": 1,
     },
 }
 ALLOWED_INCLUDE_COUNTS: Dict[str, int] = {

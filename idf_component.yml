@@ -1,0 +1,10 @@
+version: "0.1.2"
+description: "MAX31865 RTD-to-digital converter driver"
+url: "https://github.com/janhavelka/MAX31865"
+repository: "https://github.com/janhavelka/MAX31865.git"
+license: "MIT"
+targets:
+  - esp32s2
+  - esp32s3
+dependencies:
+  idf: ">=5.0"

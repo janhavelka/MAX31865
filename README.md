@@ -14,8 +14,10 @@ directly.
   diagnostics, conversion helpers, and fault handling.
 - <a href="docs/repository-contract.md">Repository contract</a>: project layout, API
   expectations, CLI baseline, and quality gates.
-- <a href="docs/esp-idf-porting.md">ESP-IDF porting notes</a>: migration path from the
-  current Arduino/PlatformIO runtime.
+- <a href="docs/IDF_PORT.md">ESP-IDF porting notes</a>: current component and
+  transport-backend status.
+- <a href="docs/IDF_PORT_IMPLEMENTATION.md">ESP-IDF implementation status</a>:
+  completed work and remaining validation blockers.
 - <a href="docs/extracted-md/00_document_inventory.md">Extracted source notes</a>: factual
   MAX31865 datasheet and application-note extraction for implementation work.
 - <a href="docs/vendor-reference-code/README.md">Vendor reference material</a>: copied
@@ -78,6 +80,9 @@ void loop() {
 The positional `begin(...)` overload remains available for compact examples.
 New code should prefer `MAX31865BeginConfig`.
 
+`MAX31865BeginConfig::transport` can be used instead of `SPIClass` when an
+application owns SPI and GPIO setup, including ESP-IDF `spi_master` devices.
+
 ## Examples
 
 `examples/01_basic_bringup_cli` is the service and bringup tool. It covers bus
@@ -97,6 +102,7 @@ CI builds:
 - `ex_bringup_s2`
 - `ex_api_smoke_s3`
 - `native` Unity tests (`pio test -e native`)
+- ESP-IDF example: `examples/esp_idf/basic`
 
 Validation scripts:
 
@@ -106,6 +112,8 @@ python tools/check_cli_contract.py
 pio test -e native
 python -c "import json; json.load(open('library.json'))"
 git diff --check
+idf.py -C examples/esp_idf/basic set-target esp32s3 build
+idf.py -C examples/esp_idf/basic set-target esp32s2 build
 ```
 
 Doxygen configuration is provided in `Doxyfile`. Generate local API docs with:

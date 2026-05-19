@@ -38,6 +38,9 @@ and the project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Native PlatformIO/Unity test scaffold and `native` validation environment.
 - Minimal Doxygen configuration for public API documentation.
 - Root `AGENTS.md` production guidelines for future driver work.
+- `MAX31865TransportConfig` callback backend for application-owned SPI, DRDY,
+  timing, delay, and yield hooks.
+- ESP-IDF component metadata and a basic `spi_master` example.
 
 ### Changed
 - Public API now follows the I2C library layout: nested canonical header,
@@ -53,6 +56,8 @@ and the project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   the active session.
 - README and support docs now describe protocol ownership, repository layout,
   validation gates, and ESP-IDF portability expectations.
+- Arduino SPI/GPIO fallback code is compile-guarded so the transport backend can
+  build without Arduino headers.
 
 ### Removed
 - Old root-level public header layout.

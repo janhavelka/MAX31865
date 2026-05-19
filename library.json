@@ -27,7 +27,8 @@
   "license": "MIT",
   "homepage": "https://github.com/janhavelka/MAX31865",
   "frameworks": [
-    "arduino"
+    "arduino",
+    "espidf"
   ],
   "platforms": [
     "espressif32"

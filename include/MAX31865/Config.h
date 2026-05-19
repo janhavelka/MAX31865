@@ -5,8 +5,29 @@
 
 #pragma once
 
-#include <SPI.h>
 #include <stdint.h>
+
+#include "MAX31865/Status.h"
+
+#ifndef MAX31865_HAS_ARDUINO_BACKEND
+#if defined(ARDUINO)
+#define MAX31865_HAS_ARDUINO_BACKEND 1
+#elif defined(__has_include)
+#if __has_include(<SPI.h>)
+#define MAX31865_HAS_ARDUINO_BACKEND 1
+#else
+#define MAX31865_HAS_ARDUINO_BACKEND 0
+#endif
+#else
+#define MAX31865_HAS_ARDUINO_BACKEND 0
+#endif
+#endif
+
+#if MAX31865_HAS_ARDUINO_BACKEND
+#include <SPI.h>
+#else
+class SPIClass;
+#endif
 
 #ifndef MAX31865_DEFAULT_SPI_HZ
 /// Default SPI clock used when MAX31865BeginConfig::spiHz is zero.
@@ -64,6 +85,31 @@ typedef struct MAX31865RtdCoefficients {
     float c; ///< Negative-temperature coefficient, normally -4.18301e-12.
 } MAX31865RtdCoefficients;
 
+typedef MAX31865Status (*MAX31865TransferFn)(const uint8_t* tx,
+                                             uint8_t* rx,
+                                             size_t len,
+                                             uint32_t timeoutMs,
+                                             void* user);
+typedef bool (*MAX31865ReadDrdyFn)(void* user);
+typedef uint32_t (*MAX31865NowMsFn)(void* user);
+typedef void (*MAX31865DelayMsFn)(uint32_t ms, void* user);
+typedef void (*MAX31865DelayUsFn)(uint32_t us, void* user);
+typedef void (*MAX31865YieldFn)(void* user);
+
+/**
+ * @brief Optional application-owned transport hooks.
+ */
+typedef struct MAX31865TransportConfig {
+    MAX31865TransferFn transfer; ///< Full register-frame transfer callback.
+    MAX31865ReadDrdyFn readDrdy; ///< Optional DRDY reader; true when data is ready.
+    MAX31865NowMsFn nowMs;       ///< Optional monotonic millisecond source.
+    MAX31865DelayMsFn delayMs;   ///< Optional scheduler-friendly millisecond delay.
+    MAX31865DelayUsFn delayUs;   ///< Optional protocol microsecond delay.
+    MAX31865YieldFn cooperativeYield; ///< Optional cooperative yield hook.
+    void* user;                  ///< User context passed to callbacks.
+    uint32_t timeoutMs;          ///< Transfer timeout in milliseconds; zero selects default.
+} MAX31865TransportConfig;
+
 /**
  * @brief begin() configuration bundle.
  */
@@ -79,6 +125,7 @@ typedef struct MAX31865BeginConfig {
     MAX31865Filter filter;           ///< Digital notch-filter selection.
     bool useCustomCoefficients;      ///< Use coefficients instead of IEC 60751 defaults when true.
     MAX31865RtdCoefficients coefficients; ///< Optional custom RTD coefficients.
+    MAX31865TransportConfig transport; ///< Optional non-Arduino transport hooks.
 } MAX31865BeginConfig;
 
 /**

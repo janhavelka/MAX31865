@@ -36,6 +36,10 @@ uint32_t normalizedSpiHz(uint32_t spiHz) {
     return (spiHz > max31865_cmd::SPI_MAX_HZ) ? max31865_cmd::SPI_MAX_HZ : spiHz;
 }
 
+uint32_t normalizedTransportTimeoutMs(uint32_t timeoutMs) {
+    return (timeoutMs == 0U) ? MAX31865_SPI_LOCK_TIMEOUT_MS : timeoutMs;
+}
+
 uint8_t verifyMaskForRegister(uint8_t addr) {
     if (addr == max31865_cmd::REG_CONFIG) {
         return max31865_cmd::CONFIG_BIAS |
@@ -117,12 +121,12 @@ const char* max31865ErrorName(MAX31865Error error) {
 
 MAX31865::MAX31865()
     : _spi(nullptr),
-      _spiSettings(MAX31865_DEFAULT_SPI_HZ, MSBFIRST, SPI_MODE1),
       _spiMutex(nullptr),
       _spiHz(MAX31865_DEFAULT_SPI_HZ),
       _spiLockTimeoutMs(MAX31865_SPI_LOCK_TIMEOUT_MS),
       _csPin(-1),
       _drdyPin(-1),
+      _transport{},
       _initialized(false),
       _state(MAX31865State::Uninitialized),
       _driverState(MAX31865DriverState::UNINIT),
@@ -175,7 +179,8 @@ bool MAX31865::begin(const MAX31865BeginConfig& config) {
     }
     resetBeginRuntimeState();
 
-    if (config.spi == nullptr || config.pins.cs < 0) {
+    const bool hasTransport = config.transport.transfer != nullptr;
+    if (!hasTransport && (config.spi == nullptr || config.pins.cs < 0)) {
         setFault(MAX31865Error::InvalidArgument);
         return false;
     }
@@ -207,9 +212,10 @@ bool MAX31865::begin(const MAX31865BeginConfig& config) {
 
     _spi = config.spi;
     _spiHz = normalizedSpiHz(config.spiHz);
-    _spiSettings = SPISettings(_spiHz, MSBFIRST, SPI_MODE1);
     _csPin = config.pins.cs;
     _drdyPin = config.pins.drdy;
+    _transport = config.transport;
+    _transport.timeoutMs = normalizedTransportTimeoutMs(config.transport.timeoutMs);
     _referenceResistorOhms = config.referenceResistorOhms;
     _rtdNominalOhms = config.rtdNominalOhms;
     if (config.useCustomCoefficients) {
@@ -226,11 +232,18 @@ bool MAX31865::begin(const MAX31865BeginConfig& config) {
     _conversionStarted = false;
     _sampleAvailable = false;
 
-    _spi->begin(config.pins.sck, config.pins.miso, config.pins.mosi, config.pins.cs);
-    pinMode(_csPin, OUTPUT);
-    digitalWrite(_csPin, HIGH);
-    if (_drdyPin >= 0) {
-        pinMode(_drdyPin, INPUT);
+    if (!hasTransport) {
+#if MAX31865_HAS_ARDUINO_BACKEND
+        _spi->begin(config.pins.sck, config.pins.miso, config.pins.mosi, config.pins.cs);
+        pinMode(_csPin, OUTPUT);
+        digitalWrite(_csPin, HIGH);
+        if (_drdyPin >= 0) {
+            pinMode(_drdyPin, INPUT);
+        }
+#else
+        setFault(MAX31865Error::InvalidConfig);
+        return false;
+#endif
     }
 
     _initialized = true;
@@ -430,7 +443,6 @@ MAX31865Status MAX31865::recover() {
 
 void MAX31865::setSpiHz(uint32_t spiHz) {
     _spiHz = normalizedSpiHz(spiHz);
-    _spiSettings = SPISettings(_spiHz, MSBFIRST, SPI_MODE1);
 }
 
 bool MAX31865::setRtdParameters(float referenceResistorOhms,
@@ -618,7 +630,7 @@ bool MAX31865::readSingle(MAX31865Sample& out, uint32_t timeoutMs) {
             }
             return ok;
         }
-        yield();
+        yieldForDriver();
     }
 
     _conversionStarted = false;
@@ -1237,6 +1249,7 @@ void MAX31865::resetBeginRuntimeState() {
     _spi = nullptr;
     _csPin = -1;
     _drdyPin = -1;
+    _transport = MAX31865TransportConfig{};
     _initialized = false;
     _state = MAX31865State::Uninitialized;
     _driverState = MAX31865DriverState::UNINIT;
@@ -1279,16 +1292,36 @@ void MAX31865::resetBeginRuntimeState() {
 }
 
 bool MAX31865::transferRaw(const uint8_t* tx, uint8_t* rx, size_t len, bool recordHealth) {
-    if (_spi == nullptr || _csPin < 0 || tx == nullptr || rx == nullptr || len == 0U) {
+    if (tx == nullptr || rx == nullptr || len == 0U) {
         if (recordHealth) {
             setFault(MAX31865Error::InvalidArgument);
         }
         return false;
     }
+    if (_transport.transfer != nullptr) {
+        MAX31865Status status = _transport.transfer(tx, rx, len, _transport.timeoutMs,
+                                                    _transport.user);
+        if (recordHealth) {
+            if (status.ok()) {
+                recordOk();
+            } else {
+                recordFailure(status.code);
+            }
+        }
+        return status.ok();
+    }
+    if (_spi == nullptr || _csPin < 0) {
+        if (recordHealth) {
+            setFault(MAX31865Error::InvalidArgument);
+        }
+        return false;
+    }
+#if MAX31865_HAS_ARDUINO_BACKEND
     if (!lockSpi(recordHealth)) {
         return false;
     }
-    _spi->beginTransaction(_spiSettings);
+    SPISettings settings(_spiHz, MSBFIRST, SPI_MODE1);
+    _spi->beginTransaction(settings);
     digitalWrite(_csPin, LOW);
     for (size_t i = 0; i < len; ++i) {
         rx[i] = _spi->transfer(tx[i]);
@@ -1300,6 +1333,12 @@ bool MAX31865::transferRaw(const uint8_t* tx, uint8_t* rx, size_t len, bool reco
         recordOk();
     }
     return true;
+#else
+    if (recordHealth) {
+        setFault(MAX31865Error::InvalidConfig);
+    }
+    return false;
+#endif
 }
 
 bool MAX31865::transfer(const uint8_t* tx, uint8_t* rx, size_t len) {
@@ -1316,14 +1355,14 @@ bool MAX31865::waitForFaultCycleDone(uint32_t timeoutMs) {
         if ((config & max31865_cmd::CONFIG_FAULT_CYCLE_MASK) == 0U) {
             return true;
         }
-        yield();
+        yieldForDriver();
     }
     recordFailure(MAX31865Error::Timeout);
     return false;
 }
 
 bool MAX31865::conversionReady() {
-    if (_drdyPin >= 0 && digitalRead(_drdyPin) == LOW) {
+    if (readDrdyReady()) {
         return true;
     }
     const uint32_t readyMs = (_autoConvert && !_autoFirstConversionPending)
@@ -1340,7 +1379,7 @@ bool MAX31865::available() const {
     if (_sampleAvailable) {
         return true;
     }
-    if (_drdyPin >= 0 && digitalRead(_drdyPin) == LOW) {
+    if (readDrdyReady()) {
         return true;
     }
     const uint32_t readyMs = (_autoConvert && !_autoFirstConversionPending)
@@ -1411,19 +1450,63 @@ void MAX31865::recordFailure(MAX31865Error error) {
 }
 
 uint32_t MAX31865::nowMs() const {
+    if (_transport.nowMs != nullptr) {
+        return _transport.nowMs(_transport.user);
+    }
+#if MAX31865_HAS_ARDUINO_BACKEND
     return millis();
+#else
+    return 0;
+#endif
 }
 
 void MAX31865::delayMs(uint32_t ms) const {
+    if (_transport.delayMs != nullptr) {
+        _transport.delayMs(ms, _transport.user);
+        return;
+    }
+#if MAX31865_HAS_ARDUINO_BACKEND
     delay(ms);
+#else
+    (void)ms;
+#endif
 }
 
 void MAX31865::delayUs(uint32_t us) const {
+    if (_transport.delayUs != nullptr) {
+        _transport.delayUs(us, _transport.user);
+        return;
+    }
     while (us >= 1000U) {
         delayMs(1);
         us -= 1000U;
     }
     if (us > 0U) {
+#if MAX31865_HAS_ARDUINO_BACKEND
         delayMicroseconds(us);
+#else
+        (void)us;
+#endif
     }
+}
+
+void MAX31865::yieldForDriver() const {
+    if (_transport.cooperativeYield != nullptr) {
+        _transport.cooperativeYield(_transport.user);
+        return;
+    }
+#if MAX31865_HAS_ARDUINO_BACKEND
+    yield();
+#endif
+}
+
+bool MAX31865::readDrdyReady() const {
+    if (_transport.readDrdy != nullptr) {
+        return _transport.readDrdy(_transport.user);
+    }
+#if MAX31865_HAS_ARDUINO_BACKEND
+    return _drdyPin >= 0 && digitalRead(_drdyPin) == LOW;
+#else
+    return false;
+#endif
 }

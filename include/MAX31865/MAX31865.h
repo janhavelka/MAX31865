@@ -12,8 +12,6 @@
 #ifndef MAX31865_H_
 #define MAX31865_H_
 
-#include <Arduino.h>
-#include <SPI.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/semphr.h>
 #include <stddef.h>
@@ -23,6 +21,10 @@
 #include "MAX31865/Config.h"
 #include "MAX31865/Status.h"
 #include "MAX31865/Version.h"
+
+#if MAX31865_HAS_ARDUINO_BACKEND
+#include <Arduino.h>
+#endif
 
 /**
  * @defgroup max31865 MAX31865 ESP32 Driver
@@ -385,14 +387,16 @@ private:
     uint32_t nowMs() const;
     void delayMs(uint32_t ms) const;
     void delayUs(uint32_t us) const;
+    void yieldForDriver() const;
+    bool readDrdyReady() const;
 
     SPIClass* _spi;
-    SPISettings _spiSettings;
     SemaphoreHandle_t _spiMutex;
     uint32_t _spiHz;
     uint32_t _spiLockTimeoutMs;
     int _csPin;
     int _drdyPin;
+    MAX31865TransportConfig _transport;
 
     bool _initialized;
     MAX31865State _state;

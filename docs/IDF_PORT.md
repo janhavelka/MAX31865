@@ -1,60 +1,57 @@
-# MAX31865 ESP-IDF v6.0.1 Port Audit
+# MAX31865 ESP-IDF Port Status
 
-Scope: future ESP-IDF support for the current MAX31865 RTD driver while keeping
-the Arduino SPI API and examples compatible. This file supersedes the older
-`docs/esp-idf-porting.md` for new implementation work.
+Last updated: 2026-05-19
+
+Scope: ESP-IDF support for the current MAX31865 RTD driver while keeping the
+Arduino SPI API and examples compatible. This file supersedes the older
+`docs/esp-idf-porting.md` for implementation work.
 
 ## Current State
 
-- The library is Arduino/PlatformIO oriented. `include/MAX31865/Config.h` exposes
-  `SPIClass*`, and `include/MAX31865/MAX31865.h` exposes `SPIClass`,
-  `SPISettings`, and FreeRTOS semaphore types.
-- `src/MAX31865.cpp` owns SPI bus initialization through `_spi->begin(...)`,
-  controls `/CS` through Arduino GPIO calls, reads DRDY through `digitalRead`,
-  and uses Arduino timing/yield calls.
+- The library supports Arduino/PlatformIO and an application-owned transport
+  callback backend. `include/MAX31865/Config.h` still exposes the Arduino
+  `SPIClass*` compatibility field when Arduino headers are available.
+- `src/MAX31865.cpp` routes register frames through `MAX31865TransportConfig`
+  when supplied. The legacy Arduino fallback still owns `_spi->begin(...)`,
+  `/CS`, DRDY GPIO, and Arduino timing when no transport is supplied.
 - The driver already has production behavior worth preserving: explicit
   `begin/tick/stop/end`, bounded polling, health tracking, manual `recover`,
   register helpers, fault handling, one-shot and continuous conversion support.
 - Examples are Arduino-only and configure board pins in example code.
-- `library.json` and `platformio.ini` are Arduino metadata only.
+- `library.json` declares Arduino and ESP-IDF. A root ESP-IDF `CMakeLists.txt`,
+  `idf_component.yml`, and `examples/esp_idf/basic` are present.
 
 ## Blockers
 
-1. Pure ESP-IDF cannot compile the public headers because Arduino SPI types are
-   part of the public class/config layout.
-2. The implementation owns bus setup and chip-select GPIO. For IDF, bus/device
-   setup must live in the application or adapter using `spi_master`; the core
-   should only request register transactions.
-3. Timing and delays are Arduino-specific. IDF needs `esp_timer_get_time`,
-   `esp_rom_delay_us`, and FreeRTOS task delay/yield wrappers.
-4. SPI health tracking currently assumes `bool transfer(...)`; IDF must preserve
-   `MAX31865Status` detail by mapping `esp_err_t`.
-5. `/DRDY` pin support is tied to Arduino GPIO and must become an optional
-   callback/adapter field.
+1. The ESP-IDF example still needs to be built with a sourced ESP-IDF toolchain.
+2. Hardware validation is still required for one-shot reads, continuous reads,
+   DRDY readiness, and fault cycles.
+3. Native fake-transport tests should be expanded for callback transfer errors,
+   timeout mapping, and DRDY readiness.
 
 ## Exact Files/APIs To Change
 
 - `include/MAX31865/Config.h`
-  - Guard `#include <SPI.h>` and `SPIClass*` fields with `ARDUINO`.
-  - Add an additive transport configuration for non-Arduino builds. Do not
-    remove `MAX31865BeginConfig::spi` in an existing minor/patch release.
-  - Add callback types for SPI transaction, optional DRDY read, time, delay, and
-    optional lock/unlock if the adapter owns shared SPI arbitration.
+  - Done: Arduino SPI include is guarded through `MAX31865_HAS_ARDUINO_BACKEND`.
+  - Done: additive `MAX31865TransportConfig` supports non-Arduino transfer,
+    DRDY, time, delay, and yield callbacks.
+  - Preserve `MAX31865BeginConfig::spi` for Arduino compatibility.
 - `include/MAX31865/MAX31865.h`
-  - Remove unguarded Arduino and SPI includes from the common public path.
-  - Replace private `SPIClass*`, `SPISettings`, and direct mutex details with a
-    transport member or put Arduino-only members behind `ARDUINO`.
+  - Done: unguarded Arduino and SPI includes were removed from this header.
+  - The private Arduino `SPIClass*` compatibility pointer remains, but it is
+    forward-declared when Arduino headers are unavailable.
   - Keep existing `begin(SPIClass&, ...)` overloads for Arduino.
 - `src/MAX31865.cpp`
-  - Route all register reads/writes through one transport function.
+  - Done: register reads/writes route through one transport function, using the
+    callback backend when supplied.
   - Keep the existing health transitions, probe/recover rules, and fault logic.
-  - Replace `pinMode`, `digitalWrite`, `digitalRead`, `delay`, `delayMicroseconds`,
-    `millis`, and `yield` with port wrappers.
+  - Done: `pinMode`, `digitalWrite`, `digitalRead`, `delay`,
+    `delayMicroseconds`, `millis`, and `yield` are behind callback or guarded
+    Arduino fallback paths.
 - `examples/common/TransportAdapter.h`
   - Keep Arduino helper code there; add a separate IDF adapter in an IDF example
     rather than mixing framework code in the library.
-- Add component metadata during implementation: root `CMakeLists.txt` and
-  `idf_component.yml`.
+- Done: root `CMakeLists.txt` and `idf_component.yml` were added.
 
 ## Architecture Preserving Arduino Compatibility
 
@@ -81,7 +78,7 @@ multiple independently locked transactions.
 
 ## Adapter Contract
 
-Add a non-Arduino config shape equivalent to:
+Implemented non-Arduino config shape:
 
 ```cpp
 typedef MAX31865Status (*MAX31865TransferFn)(
@@ -94,12 +91,15 @@ typedef MAX31865Status (*MAX31865TransferFn)(
 typedef bool (*MAX31865ReadDrdyFn)(void* user);
 typedef uint32_t (*MAX31865NowMsFn)(void* user);
 typedef void (*MAX31865DelayUsFn)(uint32_t us, void* user);
+typedef void (*MAX31865YieldFn)(void* user);
 
 struct MAX31865TransportConfig {
   MAX31865TransferFn transfer;
   MAX31865ReadDrdyFn readDrdy;   // optional
   MAX31865NowMsFn nowMs;         // optional, esp_timer_get_time()/1000
+  MAX31865DelayMsFn delayMs;     // optional, FreeRTOS delay/yield
   MAX31865DelayUsFn delayUs;     // optional, esp_rom_delay_us
+  MAX31865YieldFn cooperativeYield;
   void* user;
   uint32_t timeoutMs;
 };
@@ -119,13 +119,13 @@ IDF adapter responsibilities:
 
 ## CMake/Component Plan
 
-Core component after the port:
+Core component:
 
 ```cmake
 idf_component_register(
   SRCS "src/MAX31865.cpp"
   INCLUDE_DIRS "include"
-  REQUIRES esp_timer freertos
+  REQUIRES freertos
 )
 ```
 
@@ -214,13 +214,14 @@ pins, host, and device handles; the library owns MAX31865 protocol state.
 
 ## Ordered Checklist
 
-1. Add the transport config types in `Config.h` without removing Arduino fields.
-2. Hide Arduino-only includes and private members behind `ARDUINO`.
-3. Implement Arduino transport adapter to preserve current behavior.
-4. Refactor register helpers to use the transport transaction callback.
-5. Add IDF time/delay wrappers and `esp_err_t` to `MAX31865Status` mapping.
-6. Add root `CMakeLists.txt` and `idf_component.yml`.
-7. Add an IDF SPI example using `driver/spi_master.h`.
-8. Add fake-transport native tests for register and fault behavior.
-9. Add ESP-IDF v6.0.1 build tests for ESP32-S2 and ESP32-S3.
-10. Re-run Arduino PlatformIO examples/tests and verify no public API regression.
+1. Done: add the transport config types in `Config.h` without removing Arduino fields.
+2. Done: hide Arduino-only includes/fallback code behind `MAX31865_HAS_ARDUINO_BACKEND`.
+3. Done: preserve current Arduino behavior as the fallback backend.
+4. Done: refactor register helpers to use the transport transaction callback.
+5. Done: add IDF example time/delay wrappers and `esp_err_t` to
+   `MAX31865Status` mapping.
+6. Done: add root `CMakeLists.txt` and `idf_component.yml`.
+7. Done: add an IDF SPI example using `driver/spi_master.h`.
+8. Pending: add fake-transport native tests for register and fault behavior.
+9. Pending local ESP-IDF toolchain: build tests for ESP32-S2 and ESP32-S3.
+10. Done locally: re-run Arduino PlatformIO examples/tests.
