@@ -10,7 +10,6 @@ static void exercisePublicApi(MAX31865& device) {
   MAX31865Pins pins = {12, 13, 11, 10, -1};
 
   MAX31865BeginConfig cfg{};
-  cfg.spi = &SPI;
   cfg.pins = pins;
   cfg.spiHz = 1000000U;
   cfg.verifyProbe = false;
@@ -77,7 +76,7 @@ static void exercisePublicApi(MAX31865& device) {
   (void)device.getBiasSettleTimeUs();
 
   if (g_touch_hardware) {
-    (void)device.begin(cfg);
+    (void)device.begin(SPI, cfg);
     (void)device.begin(SPI, pins.sck, pins.miso, pins.mosi, pins.cs, pins.drdy, cfg.spiHz);
     (void)device.probe();
     (void)device.recover();

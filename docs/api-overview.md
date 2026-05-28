@@ -12,9 +12,22 @@
   `MAX31865BeginConfig::referenceResistorOhms`.
 
 The MAX31865 uses SPI mode 1 (`CPOL=0`, `CPHA=1`). The driver wraps transfers
-in Arduino SPI transactions and serializes them with an internal ESP32 mutex.
-`setSpiLockTimeoutMs()` changes the lock timeout used by register and
-measurement operations.
+in Arduino SPI transactions when the guarded Arduino compatibility backend is
+used. Transport-backed callers can supply paired `lock`/`unlock` callbacks for
+bounded bus serialization; the library no longer owns an internal ESP32 mutex.
+`setSpiLockTimeoutMs()` changes the timeout passed to transport lock callbacks.
+
+Framework-neutral code can include `MAX31865/Core.h` to get the config,
+transport, command, status, data contracts, and the `MAX31865Core` driver
+entry point. That include path does not require Arduino, SPI, FreeRTOS, or
+ESP-IDF headers. `MAX31865Core` is an alias over the same transport-backed
+implementation used by `MAX31865`, so applications do not get duplicate
+protocol state or divergent behavior.
+The register protocol, RTD math, fault handling, and health logic live in the
+main source path. Arduino SPI/GPIO/timing fallback code is isolated in
+`src/MAX31865Arduino.cpp` behind `MAX31865_HAS_ARDUINO_BACKEND`.
+The main driver header forward-declares `SPIClass` for compatibility overloads
+instead of including Arduino/SPI framework headers.
 
 ## Initialization
 
@@ -24,7 +37,6 @@ New code should prefer the typed begin configuration:
 MAX31865 rtd;
 
 MAX31865BeginConfig cfg{};
-cfg.spi = &SPI;
 cfg.pins = {12, 13, 11, 10, -1};
 cfg.spiHz = 1000000U;
 cfg.verifyProbe = true;
@@ -34,7 +46,7 @@ cfg.inputFilterTimeConstantUs = 1000U;
 cfg.wireMode = MAX31865WireMode::FourWire;
 cfg.filter = MAX31865Filter::Hz60;
 
-if (!rtd.begin(cfg)) {
+if (!rtd.begin(SPI, cfg)) {
   Serial.println(rtd.lastErrorName());
 }
 ```
@@ -42,6 +54,19 @@ if (!rtd.begin(cfg)) {
 `verifyProbe` runs a non-destructive writable-threshold readback test. The
 MAX31865 has no chip-ID register, so a robust probe must verify that writable
 register bits can be read, changed, and restored.
+
+Direct `rtd.begin(cfg)` is reserved for the transport-backed path. In that mode
+`cfg.transport.transfer`, `cfg.transport.nowMs`, `cfg.transport.delayMs`, and
+`cfg.transport.delayUs` are required. Optional `cfg.transport.lock` and
+`cfg.transport.unlock` must be supplied together.
+
+Pure-core users can make the entry point explicit:
+
+```cpp
+#include "MAX31865/Core.h"
+
+MAX31865Core rtd;
+```
 
 ## Operating Model
 

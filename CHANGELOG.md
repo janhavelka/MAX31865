@@ -40,9 +40,17 @@ and the project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Root `AGENTS.md` production guidelines for future driver work.
 - `MAX31865TransportConfig` callback backend for application-owned SPI, DRDY,
   timing, delay, and yield hooks.
+- `MAX31865/Transport.h` for the framework-neutral transport contract and
+  `MAX31865/Core.h` as a clean core contract include path.
+- `MAX31865Core` pure-core alias from `MAX31865/Core.h` for non-Arduino
+  consumers using the transport-backed driver path without duplicate state.
+- Optional paired backend lock/unlock callbacks in `MAX31865TransportConfig`.
+- Migration notes for the begin/transport split.
 - ESP-IDF component metadata and a basic `spi_master` example.
 - `scripts/check_idf_example_contract.py` to guard the native ESP-IDF example
   against Arduino compatibility facades and missing IDF dependencies.
+- `src/MAX31865Arduino.cpp` as the guarded Arduino compatibility implementation
+  source.
 
 ### Changed
 - Public API now follows the I2C library layout: nested canonical header,
@@ -60,9 +68,32 @@ and the project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   validation gates, and ESP-IDF portability expectations.
 - Arduino SPI/GPIO fallback code is compile-guarded so the transport backend can
   build without Arduino headers.
+- `MAX31865BeginConfig` is now framework-neutral and direct `begin(config)` is
+  reserved for transport-backed callers with explicit timing hooks.
+- Arduino typed begin now uses the guarded `begin(SPIClass&, config)`
+  compatibility overload.
+- Core/source path no longer owns a FreeRTOS semaphore; optional bounded bus
+  serialization is now transport `lock`/`unlock` callback-owned.
+- `lastOperationStatus()` now preserves transport callback status messages and
+  details for transfer and lock failures.
+- Arduino SPI/GPIO/timing fallback definitions moved out of the main protocol
+  source; `src/MAX31865.cpp` remains the transport-backed core path and builds
+  with `MAX31865_HAS_ARDUINO_BACKEND=0`.
+- Doxygen now generates local ignored HTML under `docs/generated/`, matching
+  repository documentation.
+- `MAX31865.h` no longer includes Arduino/SPI framework headers transitively;
+  Arduino sketches should rely on the normal framework prelude or include
+  `<SPI.h>` before using `SPIClass` directly.
+- `MAX31865/Core.h` now exposes the transport-backed driver entry point, not
+  only support contracts. It rejects already-enabled Arduino backend mode so
+  the pure-core include cannot accidentally grow compatibility overloads.
 
 ### Removed
+- `MAX31865BeginConfig::spi`; Arduino callers should pass the SPI bus to
+  `begin(SPI, config)` or use the compact positional overload.
 - Old root-level public header layout.
+- Root ESP-IDF component dependency on `freertos`; FreeRTOS remains only in
+  platform/example code that directly calls its APIs.
 
 ## [0.1.2] - 2026-04-29
 

@@ -12,8 +12,6 @@
 #ifndef MAX31865_H_
 #define MAX31865_H_
 
-#include <freertos/FreeRTOS.h>
-#include <freertos/semphr.h>
 #include <stddef.h>
 #include <stdint.h>
 
@@ -23,7 +21,7 @@
 #include "MAX31865/Version.h"
 
 #if MAX31865_HAS_ARDUINO_BACKEND
-#include <Arduino.h>
+class SPIClass;
 #endif
 
 /**
@@ -49,8 +47,17 @@ public:
      */
     bool begin(const MAX31865BeginConfig& config);
 
+#if MAX31865_HAS_ARDUINO_BACKEND
     /**
-     * @brief Compact begin overload using default PT100/400-ohm scaling.
+     * @brief Arduino compatibility begin using SPIClass with typed settings.
+     * @param spi Arduino SPI bus object.
+     * @param config Core begin configuration; transport is ignored.
+     * @return true when the driver is ready for commands.
+     */
+    bool begin(SPIClass& spi, const MAX31865BeginConfig& config);
+
+    /**
+     * @brief Compact Arduino begin overload using default PT100/400-ohm scaling.
      * @param spi SPI bus object.
      * @param sckPin SPI SCLK pin.
      * @param misoPin SPI MISO pin connected to MAX31865 SDO.
@@ -67,8 +74,9 @@ public:
                int csPin,
                int drdyPin = -1,
                uint32_t spiHz = MAX31865_DEFAULT_SPI_HZ);
+#endif
 
-    /// Disable conversion, release the SPI mutex, and return to Uninitialized state.
+    /// Disable conversion, release runtime state, and return to Uninitialized state.
     void end();
 
     /**
@@ -366,6 +374,7 @@ public:
     static bool decodeFaultStatus(uint8_t raw, MAX31865FaultStatus& out);
 
 private:
+    bool beginInternal(const MAX31865BeginConfig& config, void* arduinoSpi);
     bool applyConfig();
     bool readRegister(uint8_t addr, uint8_t& value);
     bool readRegisterNoHealth(uint8_t addr, uint8_t& value);
@@ -373,6 +382,15 @@ private:
     bool writeRegisterNoHealth(uint8_t addr, uint8_t value);
     bool transfer(const uint8_t* tx, uint8_t* rx, size_t len);
     bool transferRaw(const uint8_t* tx, uint8_t* rx, size_t len, bool recordHealth);
+#if MAX31865_HAS_ARDUINO_BACKEND
+    bool beginArduinoBackend(const MAX31865BeginConfig& config, void* arduinoSpi);
+    bool transferArduinoBackend(const uint8_t* tx, uint8_t* rx, size_t len);
+    uint32_t arduinoNowMs() const;
+    void arduinoDelayMs(uint32_t ms) const;
+    void arduinoDelayUs(uint32_t us) const;
+    void arduinoYield() const;
+    bool arduinoReadDrdyReady() const;
+#endif
     bool lockSpi(bool recordHealth);
     void unlockSpi();
     void resetBeginRuntimeState();
@@ -381,17 +399,18 @@ private:
     bool cacheSample(MAX31865Sample& sample);
     void setState(MAX31865State state);
     void setFault(MAX31865Error error);
+    void setFaultStatus(const MAX31865Status& status);
     void setLastError(MAX31865Error error);
     void recordOk();
     void recordFailure(MAX31865Error error);
+    void recordFailureStatus(const MAX31865Status& status);
     uint32_t nowMs() const;
     void delayMs(uint32_t ms) const;
     void delayUs(uint32_t us) const;
     void yieldForDriver() const;
     bool readDrdyReady() const;
 
-    SPIClass* _spi;
-    SemaphoreHandle_t _spiMutex;
+    void* _arduinoSpi;
     uint32_t _spiHz;
     uint32_t _spiLockTimeoutMs;
     int _csPin;
@@ -402,6 +421,7 @@ private:
     MAX31865State _state;
     MAX31865DriverState _driverState;
     MAX31865Error _lastError;
+    MAX31865Status _lastStatus;
     uint8_t _offlineThreshold;
     uint8_t _consecutiveFailures;
     uint32_t _totalFailures;

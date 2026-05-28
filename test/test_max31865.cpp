@@ -2,10 +2,13 @@
 
 #include <unity.h>
 
-#include "MAX31865/MAX31865.h"
+#include "MAX31865/Core.h"
 
 void setUp() {}
 void tearDown() {}
+
+static_assert(sizeof(MAX31865Core) == sizeof(MAX31865),
+              "MAX31865Core must not add duplicate driver state");
 
 static void test_fault_status_decodes_documented_bits_only() {
     MAX31865FaultStatus fault{};
@@ -68,6 +71,13 @@ static void test_status_helpers_and_default_health_aliases() {
                             static_cast<uint8_t>(device.healthState()));
 }
 
+static void test_core_alias_is_framework_neutral_driver_entrypoint() {
+    MAX31865Core core;
+    TEST_ASSERT_FALSE(core.isInitialized());
+    TEST_ASSERT_EQUAL_UINT8(static_cast<uint8_t>(MAX31865DriverState::UNINIT),
+                            static_cast<uint8_t>(core.driverState()));
+}
+
 static void test_settings_status_requires_initialized_driver() {
     MAX31865 device;
     MAX31865Settings settings{};
@@ -81,6 +91,45 @@ static void test_settings_status_requires_initialized_driver() {
                             static_cast<uint8_t>(device.driverState()));
 }
 
+static MAX31865Status failingTransfer(const uint8_t*,
+                                      uint8_t*,
+                                      size_t,
+                                      uint32_t,
+                                      void*) {
+    return MAX31865Status::Error(MAX31865Error::SpiTransferFailed,
+                                 "fake transfer failed",
+                                 1234);
+}
+
+static uint32_t fakeNowMs(void*) {
+    return 1U;
+}
+
+static void fakeDelayMs(uint32_t, void*) {}
+static void fakeDelayUs(uint32_t, void*) {}
+
+static void test_transport_failure_status_preserves_detail() {
+    MAX31865 device;
+    MAX31865BeginConfig cfg{};
+    cfg.pins = {0, 0, 0, 1, -1};
+    cfg.verifyProbe = false;
+    cfg.referenceResistorOhms = 400.0f;
+    cfg.rtdNominalOhms = 100.0f;
+    cfg.wireMode = MAX31865WireMode::FourWire;
+    cfg.filter = MAX31865Filter::Hz60;
+    cfg.transport.transfer = failingTransfer;
+    cfg.transport.nowMs = fakeNowMs;
+    cfg.transport.delayMs = fakeDelayMs;
+    cfg.transport.delayUs = fakeDelayUs;
+
+    TEST_ASSERT_FALSE(device.begin(cfg));
+    const MAX31865Status st = device.lastOperationStatus();
+    TEST_ASSERT_EQUAL_UINT8(static_cast<uint8_t>(MAX31865Error::SpiTransferFailed),
+                            static_cast<uint8_t>(st.code));
+    TEST_ASSERT_EQUAL_STRING("fake transfer failed", st.msg);
+    TEST_ASSERT_EQUAL_INT32(1234, st.detail);
+}
+
 int main() {
     UNITY_BEGIN();
     RUN_TEST(test_fault_status_decodes_documented_bits_only);
@@ -88,6 +137,8 @@ int main() {
     RUN_TEST(test_pt1000_scaling_uses_configured_reference_and_nominal);
     RUN_TEST(test_timing_helpers_follow_filter_selection_defaults);
     RUN_TEST(test_status_helpers_and_default_health_aliases);
+    RUN_TEST(test_core_alias_is_framework_neutral_driver_entrypoint);
     RUN_TEST(test_settings_status_requires_initialized_driver);
+    RUN_TEST(test_transport_failure_status_preserves_detail);
     return UNITY_END();
 }

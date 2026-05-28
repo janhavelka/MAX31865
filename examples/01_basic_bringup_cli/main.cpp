@@ -1230,7 +1230,6 @@ void setup() {
 
     MAX31865Pins pins = board::rtdPins();
     MAX31865BeginConfig config{};
-    config.spi = &SPI;
     config.pins = pins;
     config.spiHz = g_spi_hz;
     config.verifyProbe = false;
@@ -1240,7 +1239,7 @@ void setup() {
     config.wireMode = MAX31865WireMode::FourWire;
     config.filter = MAX31865Filter::Hz60;
 
-    if (!rtd.begin(config)) {
+    if (!rtd.begin(SPI, config)) {
         LOGE("MAX31865 begin failed: %s", rtd.lastErrorName());
         printDetailedHealth();
     } else {

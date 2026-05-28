@@ -18,6 +18,8 @@ directly.
   transport-backend status.
 - <a href="docs/IDF_PORT_IMPLEMENTATION.md">ESP-IDF implementation status</a>:
   completed work and remaining validation blockers.
+- <a href="docs/MIGRATION.md">Migration notes</a>: breaking changes and current
+  begin/transport migration guidance.
 - <a href="docs/extracted-md/00_document_inventory.md">Extracted source notes</a>: factual
   MAX31865 datasheet and application-note extraction for implementation work.
 - <a href="docs/vendor-reference-code/README.md">Vendor reference material</a>: copied
@@ -26,17 +28,20 @@ directly.
 ## Public Layout
 
 - Main RTD header: `include/MAX31865/MAX31865.h`
+- Pure core driver include: `include/MAX31865/Core.h`
+- Transport contract: `include/MAX31865/Transport.h`
 - Configuration types: `include/MAX31865/Config.h`
 - Status, sample, and health types: `include/MAX31865/Status.h`
 - Register constants: `include/MAX31865/CommandTable.h`
-- Sources: `src/`
+- Framework-neutral protocol source: `src/MAX31865.cpp`
+- Guarded Arduino compatibility source: `src/MAX31865Arduino.cpp`
 - Bringup CLI: `examples/01_basic_bringup_cli`
 - Public API smoke build: `examples/02_api_smoke`
 - Hand-written docs: `docs/`
 - Source PDFs: `docs/source-pdfs/`
 - Compacted extracted notes: `docs/extracted-md/`; raw PDF extracts: `docs/pdf-extracted-md/`
 - Vendor reference material: `docs/vendor-reference-code/`
-- Generated Doxygen output: `docs/generated/`
+- Generated Doxygen output: `docs/generated/` (ignored by Git)
 
 Use this include:
 
@@ -53,7 +58,6 @@ MAX31865 rtd;
 
 void setup() {
   MAX31865BeginConfig cfg{};
-  cfg.spi = &SPI;
   cfg.pins = {12, 13, 11, 10, -1};
   cfg.spiHz = 1000000U;
   cfg.verifyProbe = true;
@@ -63,7 +67,7 @@ void setup() {
   cfg.wireMode = MAX31865WireMode::FourWire;
   cfg.filter = MAX31865Filter::Hz60;
 
-  if (!rtd.begin(cfg)) {
+  if (!rtd.begin(SPI, cfg)) {
     Serial.println(rtd.lastErrorName());
     return;
   }
@@ -77,11 +81,29 @@ void loop() {
 }
 ```
 
-The positional `begin(...)` overload remains available for compact examples.
-New code should prefer `MAX31865BeginConfig`.
+The positional `begin(...)` overload remains available for compact Arduino
+examples. New Arduino code should prefer `MAX31865BeginConfig` with
+`rtd.begin(SPI, cfg)`.
 
-`MAX31865BeginConfig::transport` can be used instead of `SPIClass` when an
-application owns SPI and GPIO setup, including ESP-IDF `spi_master` devices.
+Direct `rtd.begin(cfg)` is now the framework-neutral transport path.
+`MAX31865BeginConfig::transport` must provide `transfer`, `nowMs`, `delayMs`,
+and `delayUs` callbacks so timeout and conversion-wait paths have real
+advancing time sources. Optional `lock` and `unlock` callbacks may be supplied
+as a pair for bounded bus serialization.
+
+Framework-neutral consumers can include `MAX31865/Core.h` and instantiate
+`MAX31865Core`. It is a pure-core alias over the same transport-backed driver
+implementation, so there is no duplicate protocol or health state. The include
+path forces `MAX31865_HAS_ARDUINO_BACKEND=0` unless the caller has already
+selected a different mode; compatibility users should include
+`MAX31865/MAX31865.h` directly.
+
+The library source no longer owns a FreeRTOS semaphore. Transport-backed users
+that share a bus should provide bounded `lock`/`unlock` callbacks; Arduino
+compatibility calls remain guarded and use the Arduino SPI transaction API.
+Arduino SPI/GPIO/timing fallback code is isolated in
+`src/MAX31865Arduino.cpp`; the main source path remains transport-backed and
+builds with `MAX31865_HAS_ARDUINO_BACKEND=0`.
 
 ## Examples
 
@@ -96,15 +118,15 @@ the public API surface in CI.
 
 ## Validation
 
-CI builds:
+Validation targets:
 
 - `ex_bringup_s3`
 - `ex_bringup_s2`
 - `ex_api_smoke_s3`
-- `native` Unity tests (`pio test -e native`)
+- Native Unity tests (`pio test -e native`)
 - ESP-IDF example: `examples/esp_idf/basic`
 
-Validation scripts:
+Static and native checks used for local validation:
 
 ```bash
 python tools/check_core_timing_guard.py
@@ -113,6 +135,12 @@ python scripts/check_idf_example_contract.py
 pio test -e native
 python -c "import json; json.load(open('library.json'))"
 git diff --check
+```
+
+ESP-IDF build commands still require a sourced ESP-IDF toolchain and were not
+run in this workspace:
+
+```bash
 idf.py -C examples/esp_idf/basic set-target esp32s3 build
 idf.py -C examples/esp_idf/basic set-target esp32s2 build
 ```

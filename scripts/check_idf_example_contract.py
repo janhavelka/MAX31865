@@ -97,6 +97,10 @@ def main() -> int:
         if re.search(rf"\b{re.escape(component)}\b", cmake) is None:
             fail(f"IDF example CMake missing required component '{component}'")
 
+    root_cmake = (ROOT / "CMakeLists.txt").read_text(encoding="utf-8", errors="replace")
+    if re.search(r"\bfreertos\b", root_cmake) is not None:
+        fail("root component CMake must not require freertos")
+
     manifest = (ROOT / "idf_component.yml").read_text(encoding="utf-8", errors="replace")
     for token in ("esp32s2", "esp32s3", "idf:"):
         require_token(manifest, token, "idf_component.yml")

@@ -43,7 +43,7 @@ enum class MAX31865Error : uint8_t {
     InvalidArgument,        ///< Caller supplied an invalid parameter.
     InvalidConfig,          ///< begin() or RTD scaling configuration is invalid.
     ResourceAllocationFailed, ///< Internal resource allocation failed.
-    SpiLockTimeout,         ///< SPI mutex could not be acquired in time.
+    SpiLockTimeout,         ///< SPI/bus lock could not be acquired in time.
     SpiTransferFailed,      ///< SPI transaction did not complete as expected.
     RegisterVerifyFailed,   ///< Register readback did not match the write.
     DeviceNotFound,         ///< Probe rejected the observed bus response.
@@ -165,7 +165,7 @@ typedef struct MAX31865Health {
     uint32_t reference_alarm_count;  ///< Count of decoded reference fault observations.
     uint32_t drdy_timeout_count;     ///< Conversion/fault-cycle timeout count.
     uint32_t missed_drdy_count;      ///< Reserved for DRDY interrupt ports; always zero today.
-    uint32_t spi_lock_timeout_count; ///< SPI mutex acquisition timeout count.
+    uint32_t spi_lock_timeout_count; ///< SPI/bus lock acquisition timeout count.
     uint32_t task_timeout_count;     ///< Reserved for task-based ports; always zero today.
     uint32_t last_sample_timestamp_us; ///< Last sample timestamp converted to microseconds.
     uint32_t last_sample_age_us;     ///< Age of last sample in microseconds.

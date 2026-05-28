@@ -24,7 +24,7 @@ LINE_COMMENT_RE = re.compile(r"//[^\n]*")
 STRING_RE = re.compile(r'"(?:\\.|[^"\\])*"|\'(?:\\.|[^\'\\])*\'')
 
 ALLOWED_CALL_COUNTS: Dict[str, Dict[str, int]] = {
-    "src/MAX31865.cpp": {
+    "src/MAX31865Arduino.cpp": {
         "millis": 1,
         "delay": 1,
         "delayMicroseconds": 1,
@@ -32,7 +32,7 @@ ALLOWED_CALL_COUNTS: Dict[str, Dict[str, int]] = {
     },
 }
 ALLOWED_INCLUDE_COUNTS: Dict[str, int] = {
-    "include/MAX31865/MAX31865.h": 1,
+    "src/MAX31865Arduino.cpp": 1,
 }
 
 TIMING_MINIMUMS = {
@@ -42,6 +42,42 @@ TIMING_MINIMUMS = {
     "CONTINUOUS_CONVERSION_50HZ_MS": 21,
     "AUTO_FAULT_DETECTION_MAX_US": 600,
 }
+
+CLEAN_CORE_HEADERS = (
+    "include/MAX31865/Core.h",
+    "include/MAX31865/Transport.h",
+    "include/MAX31865/Config.h",
+    "include/MAX31865/Status.h",
+    "include/MAX31865/CommandTable.h",
+)
+
+CLEAN_HEADER_FORBIDDEN = {
+    "SPIClass": re.compile(r"\bSPIClass\b"),
+    "SPI.h": re.compile(r"#\s*include\s*[<\"]SPI\.h[>\"]"),
+    "Arduino.h": re.compile(r"#\s*include\s*[<\"]Arduino\.h[>\"]"),
+    "FreeRTOS": re.compile(r"\bFreeRTOS\b|freertos/"),
+    "SemaphoreHandle_t": re.compile(r"\bSemaphoreHandle_t\b"),
+    "ESP-IDF": re.compile(r"\bESP_PLATFORM\b|\besp_[a-zA-Z0-9_]+\b|driver/"),
+}
+
+CORE_SOURCE_FORBIDDEN = {
+    "FreeRTOS": re.compile(r"\bFreeRTOS\b|freertos/"),
+    "SemaphoreHandle_t": re.compile(r"\bSemaphoreHandle_t\b"),
+    "xSemaphore": re.compile(r"\bxSemaphore[A-Za-z_]*\b"),
+    "vSemaphoreDelete": re.compile(r"\bvSemaphoreDelete\b"),
+    "SPIClass": re.compile(r"\bSPIClass\b"),
+    "SPISettings": re.compile(r"\bSPISettings\b"),
+    "pinMode": re.compile(r"\bpinMode\s*\("),
+    "digitalWrite": re.compile(r"\bdigitalWrite\s*\("),
+    "digitalRead": re.compile(r"\bdigitalRead\s*\("),
+    "Arduino.h": re.compile(r"#\s*include\s*[<\"]Arduino\.h[>\"]"),
+    "SPI.h": re.compile(r"#\s*include\s*[<\"]SPI\.h[>\"]"),
+}
+
+CORE_SOURCE_BOUNDARY_FILES = (
+    "src/MAX31865.cpp",
+    "CMakeLists.txt",
+)
 
 
 def strip_non_code(text: str) -> str:
@@ -137,6 +173,34 @@ def main() -> int:
     for name, minimum in TIMING_MINIMUMS.items():
         if constant_value(name, timing_text) < minimum:
             errors.append(f"timing constant below datasheet max: {name}")
+
+    for rel in CLEAN_CORE_HEADERS:
+        path = ROOT / rel
+        if not path.exists():
+            errors.append(f"missing clean core header: {rel}")
+            continue
+        code = strip_non_code(path.read_text(encoding="utf-8", errors="replace"))
+        for token, pattern in CLEAN_HEADER_FORBIDDEN.items():
+            if pattern.search(code):
+                errors.append(f"framework token '{token}' leaked into clean core header {rel}")
+
+    core_header = ROOT / "include" / "MAX31865" / "Core.h"
+    if core_header.exists():
+        core_text = core_header.read_text(encoding="utf-8", errors="replace")
+        if '#include "MAX31865/MAX31865.h"' not in core_text:
+            errors.append("Core.h no longer exposes the transport-backed driver include")
+        if "using MAX31865Core = MAX31865;" not in core_text:
+            errors.append("Core.h no longer exposes the MAX31865Core pure-core alias")
+
+    for rel in CORE_SOURCE_BOUNDARY_FILES:
+        path = ROOT / rel
+        if not path.exists():
+            errors.append(f"missing core source boundary file: {rel}")
+            continue
+        code = strip_non_code(path.read_text(encoding="utf-8", errors="replace"))
+        for token, pattern in CORE_SOURCE_FORBIDDEN.items():
+            if pattern.search(code):
+                errors.append(f"framework token '{token}' leaked into core source path {rel}")
 
     if errors:
         print("Core timing guard FAILED:")

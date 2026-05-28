@@ -5,6 +5,8 @@
 
 namespace {
 
+constexpr uint32_t MAX_STALLED_TIME_POLLS = 100000U;
+
 bool isWritableRegister(uint8_t reg) {
     return reg == max31865_cmd::REG_CONFIG ||
            reg == max31865_cmd::REG_HIGH_FAULT_MSB ||
@@ -38,6 +40,16 @@ uint32_t normalizedSpiHz(uint32_t spiHz) {
 
 uint32_t normalizedTransportTimeoutMs(uint32_t timeoutMs) {
     return (timeoutMs == 0U) ? MAX31865_SPI_LOCK_TIMEOUT_MS : timeoutMs;
+}
+
+bool validTransport(const MAX31865TransportConfig& transport) {
+    if (transport.transfer == nullptr ||
+        transport.nowMs == nullptr ||
+        transport.delayMs == nullptr ||
+        transport.delayUs == nullptr) {
+        return false;
+    }
+    return (transport.lock == nullptr) == (transport.unlock == nullptr);
 }
 
 uint8_t verifyMaskForRegister(uint8_t addr) {
@@ -120,8 +132,7 @@ const char* max31865ErrorName(MAX31865Error error) {
 }
 
 MAX31865::MAX31865()
-    : _spi(nullptr),
-      _spiMutex(nullptr),
+    : _arduinoSpi(nullptr),
       _spiHz(MAX31865_DEFAULT_SPI_HZ),
       _spiLockTimeoutMs(MAX31865_SPI_LOCK_TIMEOUT_MS),
       _csPin(-1),
@@ -131,6 +142,7 @@ MAX31865::MAX31865()
       _state(MAX31865State::Uninitialized),
       _driverState(MAX31865DriverState::UNINIT),
       _lastError(MAX31865Error::Ok),
+      _lastStatus(MAX31865Status::Ok()),
       _offlineThreshold(MAX31865_DEFAULT_OFFLINE_THRESHOLD),
       _consecutiveFailures(0),
       _totalFailures(0),
@@ -171,17 +183,26 @@ MAX31865::~MAX31865() {
 }
 
 bool MAX31865::begin(const MAX31865BeginConfig& config) {
+    return beginInternal(config, nullptr);
+}
+
+bool MAX31865::beginInternal(const MAX31865BeginConfig& config, void* arduinoSpi) {
     if (_initialized) {
         end();
-    } else if (_spiMutex != nullptr) {
-        vSemaphoreDelete(_spiMutex);
-        _spiMutex = nullptr;
     }
     resetBeginRuntimeState();
 
     const bool hasTransport = config.transport.transfer != nullptr;
-    if (!hasTransport && (config.spi == nullptr || config.pins.cs < 0)) {
+    if (config.pins.cs < 0) {
         setFault(MAX31865Error::InvalidArgument);
+        return false;
+    }
+    if (hasTransport && !validTransport(config.transport)) {
+        setFault(MAX31865Error::InvalidConfig);
+        return false;
+    }
+    if (!hasTransport && arduinoSpi == nullptr) {
+        setFault(MAX31865Error::InvalidConfig);
         return false;
     }
     if (!validWireMode(config.wireMode) || !validFilter(config.filter) ||
@@ -202,20 +223,13 @@ bool MAX31865::begin(const MAX31865BeginConfig& config) {
     setState(MAX31865State::Configuring);
     setLastError(MAX31865Error::Ok);
 
-    if (_spiMutex == nullptr) {
-        _spiMutex = xSemaphoreCreateMutex();
-        if (_spiMutex == nullptr) {
-            setFault(MAX31865Error::ResourceAllocationFailed);
-            return false;
-        }
-    }
-
-    _spi = config.spi;
+    _arduinoSpi = arduinoSpi;
     _spiHz = normalizedSpiHz(config.spiHz);
     _csPin = config.pins.cs;
     _drdyPin = config.pins.drdy;
     _transport = config.transport;
     _transport.timeoutMs = normalizedTransportTimeoutMs(config.transport.timeoutMs);
+    _spiLockTimeoutMs = normalizedTransportTimeoutMs(config.transport.lockTimeoutMs);
     _referenceResistorOhms = config.referenceResistorOhms;
     _rtdNominalOhms = config.rtdNominalOhms;
     if (config.useCustomCoefficients) {
@@ -234,11 +248,8 @@ bool MAX31865::begin(const MAX31865BeginConfig& config) {
 
     if (!hasTransport) {
 #if MAX31865_HAS_ARDUINO_BACKEND
-        _spi->begin(config.pins.sck, config.pins.miso, config.pins.mosi, config.pins.cs);
-        pinMode(_csPin, OUTPUT);
-        digitalWrite(_csPin, HIGH);
-        if (_drdyPin >= 0) {
-            pinMode(_drdyPin, INPUT);
+        if (!beginArduinoBackend(config, _arduinoSpi)) {
+            return false;
         }
 #else
         setFault(MAX31865Error::InvalidConfig);
@@ -248,17 +259,20 @@ bool MAX31865::begin(const MAX31865BeginConfig& config) {
 
     _initialized = true;
     if (!applyConfig()) {
-        const MAX31865Error error =
-            (_lastError == MAX31865Error::Ok) ? MAX31865Error::SpiTransferFailed : _lastError;
+        MAX31865Status status = lastOperationStatus();
+        if (status.ok()) {
+            status = MAX31865Status::Error(MAX31865Error::SpiTransferFailed,
+                                           "Configuration transfer failed");
+        }
         resetBeginRuntimeState();
-        setFault(error);
+        setFaultStatus(status);
         return false;
     }
     if (config.verifyProbe) {
         const MAX31865Status probeStatus = probe();
         if (!probeStatus.ok()) {
             resetBeginRuntimeState();
-            setFault(probeStatus.code);
+            setFaultStatus(probeStatus);
             return false;
         }
     }
@@ -267,26 +281,6 @@ bool MAX31865::begin(const MAX31865BeginConfig& config) {
     _driverState = MAX31865DriverState::READY;
     setLastError(MAX31865Error::Ok);
     return true;
-}
-
-bool MAX31865::begin(SPIClass& spi,
-                     int sckPin,
-                     int misoPin,
-                     int mosiPin,
-                     int csPin,
-                     int drdyPin,
-                     uint32_t spiHz) {
-    MAX31865BeginConfig config{};
-    config.spi = &spi;
-    config.pins = {sckPin, misoPin, mosiPin, csPin, drdyPin};
-    config.spiHz = spiHz;
-    config.verifyProbe = true;
-    config.referenceResistorOhms = 400.0f;
-    config.rtdNominalOhms = 100.0f;
-    config.inputFilterTimeConstantUs = 0;
-    config.wireMode = MAX31865WireMode::FourWire;
-    config.filter = MAX31865Filter::Hz60;
-    return begin(config);
 }
 
 void MAX31865::end() {
@@ -302,10 +296,6 @@ void MAX31865::end() {
     _sampleAvailable = false;
     _biasEnabled = false;
     _autoConvert = false;
-    if (_spiMutex != nullptr) {
-        vSemaphoreDelete(_spiMutex);
-        _spiMutex = nullptr;
-    }
 }
 
 void MAX31865::tick(uint32_t nowMs) {
@@ -326,10 +316,7 @@ bool MAX31865::isOnline() const {
 }
 
 MAX31865Status MAX31865::lastOperationStatus() const {
-    if (_lastError == MAX31865Error::Ok) {
-        return MAX31865Status::Ok();
-    }
-    return MAX31865Status::Error(_lastError, max31865ErrorName(_lastError));
+    return _lastStatus;
 }
 
 void MAX31865::setOfflineThreshold(uint8_t threshold) {
@@ -390,7 +377,7 @@ void MAX31865::clearHealthCounters() {
 }
 
 MAX31865Status MAX31865::probe() {
-    if (!_initialized || _spi == nullptr) {
+    if (!_initialized || (_transport.transfer == nullptr && _arduinoSpi == nullptr)) {
         return MAX31865Status::Error(MAX31865Error::NotInitialized, "Driver not initialized");
     }
     uint8_t config = 0;
@@ -622,7 +609,21 @@ bool MAX31865::readSingle(MAX31865Sample& out, uint32_t timeoutMs) {
     setState(MAX31865State::Converting);
 
     const uint32_t start = nowMs();
-    while ((nowMs() - start) <= timeoutMs) {
+    uint32_t lastNow = start;
+    uint32_t stalledPolls = 0;
+    while (true) {
+        const uint32_t currentNow = nowMs();
+        if ((currentNow - start) > timeoutMs) {
+            break;
+        }
+        if (currentNow == lastNow) {
+            if (++stalledPolls > MAX_STALLED_TIME_POLLS) {
+                break;
+            }
+        } else {
+            stalledPolls = 0;
+            lastNow = currentNow;
+        }
         if (conversionReady()) {
             bool ok = readSample(out);
             if (_disableBiasAfterOneShot && !_autoConvert) {
@@ -1221,32 +1222,30 @@ bool MAX31865::writeRegisterNoHealth(uint8_t addr, uint8_t value) {
 }
 
 bool MAX31865::lockSpi(bool recordHealth) {
-    if (_spiMutex == nullptr) {
-        if (recordHealth) {
-            recordFailure(MAX31865Error::NotInitialized);
-        }
-        return false;
-    }
-    if (xSemaphoreTake(_spiMutex, pdMS_TO_TICKS(_spiLockTimeoutMs)) != pdTRUE) {
-        if (recordHealth) {
-            if (_spiLockTimeoutCount < UINT32_MAX) {
-                _spiLockTimeoutCount++;
+    if (_transport.lock != nullptr) {
+        const MAX31865Status status = _transport.lock(_spiLockTimeoutMs, _transport.user);
+        if (!status.ok()) {
+            if (recordHealth) {
+                if (_spiLockTimeoutCount < UINT32_MAX) {
+                    _spiLockTimeoutCount++;
+                }
+                recordFailureStatus(status);
             }
-            recordFailure(MAX31865Error::SpiLockTimeout);
+            return false;
         }
-        return false;
+        return true;
     }
     return true;
 }
 
 void MAX31865::unlockSpi() {
-    if (_spiMutex != nullptr) {
-        xSemaphoreGive(_spiMutex);
+    if (_transport.unlock != nullptr) {
+        _transport.unlock(_transport.user);
     }
 }
 
 void MAX31865::resetBeginRuntimeState() {
-    _spi = nullptr;
+    _arduinoSpi = nullptr;
     _csPin = -1;
     _drdyPin = -1;
     _transport = MAX31865TransportConfig{};
@@ -1254,6 +1253,7 @@ void MAX31865::resetBeginRuntimeState() {
     _state = MAX31865State::Uninitialized;
     _driverState = MAX31865DriverState::UNINIT;
     _lastError = MAX31865Error::Ok;
+    _lastStatus = MAX31865Status::Ok();
     _consecutiveFailures = 0;
     _totalFailures = 0;
     _totalSuccess = 0;
@@ -1285,10 +1285,6 @@ void MAX31865::resetBeginRuntimeState() {
     _spiLockTimeoutCount = 0;
     _referenceAlarmCount = 0;
     _lastFaultStatus = 0;
-    if (_spiMutex != nullptr) {
-        vSemaphoreDelete(_spiMutex);
-        _spiMutex = nullptr;
-    }
 }
 
 bool MAX31865::transferRaw(const uint8_t* tx, uint8_t* rx, size_t len, bool recordHealth) {
@@ -1299,18 +1295,25 @@ bool MAX31865::transferRaw(const uint8_t* tx, uint8_t* rx, size_t len, bool reco
         return false;
     }
     if (_transport.transfer != nullptr) {
+        const bool useBackendLock = _transport.lock != nullptr;
+        if (useBackendLock && !lockSpi(recordHealth)) {
+            return false;
+        }
         MAX31865Status status = _transport.transfer(tx, rx, len, _transport.timeoutMs,
                                                     _transport.user);
+        if (useBackendLock) {
+            unlockSpi();
+        }
         if (recordHealth) {
             if (status.ok()) {
                 recordOk();
             } else {
-                recordFailure(status.code);
+                recordFailureStatus(status);
             }
         }
         return status.ok();
     }
-    if (_spi == nullptr || _csPin < 0) {
+    if (_arduinoSpi == nullptr || _csPin < 0) {
         if (recordHealth) {
             setFault(MAX31865Error::InvalidArgument);
         }
@@ -1320,15 +1323,14 @@ bool MAX31865::transferRaw(const uint8_t* tx, uint8_t* rx, size_t len, bool reco
     if (!lockSpi(recordHealth)) {
         return false;
     }
-    SPISettings settings(_spiHz, MSBFIRST, SPI_MODE1);
-    _spi->beginTransaction(settings);
-    digitalWrite(_csPin, LOW);
-    for (size_t i = 0; i < len; ++i) {
-        rx[i] = _spi->transfer(tx[i]);
-    }
-    digitalWrite(_csPin, HIGH);
-    _spi->endTransaction();
+    const bool transferOk = transferArduinoBackend(tx, rx, len);
     unlockSpi();
+    if (!transferOk) {
+        if (recordHealth) {
+            recordFailure(MAX31865Error::SpiTransferFailed);
+        }
+        return false;
+    }
     if (recordHealth) {
         recordOk();
     }
@@ -1347,7 +1349,21 @@ bool MAX31865::transfer(const uint8_t* tx, uint8_t* rx, size_t len) {
 
 bool MAX31865::waitForFaultCycleDone(uint32_t timeoutMs) {
     const uint32_t start = nowMs();
-    while ((nowMs() - start) <= timeoutMs) {
+    uint32_t lastNow = start;
+    uint32_t stalledPolls = 0;
+    while (true) {
+        const uint32_t currentNow = nowMs();
+        if ((currentNow - start) > timeoutMs) {
+            break;
+        }
+        if (currentNow == lastNow) {
+            if (++stalledPolls > MAX_STALLED_TIME_POLLS) {
+                break;
+            }
+        } else {
+            stalledPolls = 0;
+            lastNow = currentNow;
+        }
         uint8_t config = 0;
         if (!readRegister(max31865_cmd::REG_CONFIG, config)) {
             return false;
@@ -1409,13 +1425,22 @@ void MAX31865::setFault(MAX31865Error error) {
     recordFailure(error);
 }
 
+void MAX31865::setFaultStatus(const MAX31865Status& status) {
+    setState(MAX31865State::Fault);
+    recordFailureStatus(status);
+}
+
 void MAX31865::setLastError(MAX31865Error error) {
     _lastError = error;
+    _lastStatus = (error == MAX31865Error::Ok)
+                      ? MAX31865Status::Ok()
+                      : MAX31865Status::Error(error, max31865ErrorName(error));
 }
 
 void MAX31865::recordOk() {
     _lastOkMs = nowMs();
     _lastError = MAX31865Error::Ok;
+    _lastStatus = MAX31865Status::Ok();
     _consecutiveFailures = 0;
     if (_totalSuccess < UINT32_MAX) {
         _totalSuccess++;
@@ -1426,7 +1451,17 @@ void MAX31865::recordOk() {
 }
 
 void MAX31865::recordFailure(MAX31865Error error) {
-    _lastError = error;
+    recordFailureStatus(MAX31865Status::Error(error, max31865ErrorName(error)));
+}
+
+void MAX31865::recordFailureStatus(const MAX31865Status& status) {
+    MAX31865Status failure = status;
+    if (failure.ok()) {
+        failure = MAX31865Status::Error(MAX31865Error::SpiTransferFailed,
+                                        "Operation failed");
+    }
+    _lastError = failure.code;
+    _lastStatus = failure;
     _lastErrorMs = nowMs();
     if (_consecutiveFailures < UINT8_MAX) {
         _consecutiveFailures++;
@@ -1434,10 +1469,10 @@ void MAX31865::recordFailure(MAX31865Error error) {
     if (_totalFailures < UINT32_MAX) {
         _totalFailures++;
     }
-    if (error == MAX31865Error::SpiTransferFailed) {
+    if (failure.code == MAX31865Error::SpiTransferFailed) {
         _spiErrorCount++;
     }
-    if (error == MAX31865Error::Timeout) {
+    if (failure.code == MAX31865Error::Timeout) {
         if (_drdyTimeoutCount < UINT32_MAX) {
             _drdyTimeoutCount++;
         }
@@ -1454,7 +1489,7 @@ uint32_t MAX31865::nowMs() const {
         return _transport.nowMs(_transport.user);
     }
 #if MAX31865_HAS_ARDUINO_BACKEND
-    return millis();
+    return arduinoNowMs();
 #else
     return 0;
 #endif
@@ -1466,7 +1501,7 @@ void MAX31865::delayMs(uint32_t ms) const {
         return;
     }
 #if MAX31865_HAS_ARDUINO_BACKEND
-    delay(ms);
+    arduinoDelayMs(ms);
 #else
     (void)ms;
 #endif
@@ -1483,7 +1518,7 @@ void MAX31865::delayUs(uint32_t us) const {
     }
     if (us > 0U) {
 #if MAX31865_HAS_ARDUINO_BACKEND
-        delayMicroseconds(us);
+        arduinoDelayUs(us);
 #else
         (void)us;
 #endif
@@ -1496,7 +1531,7 @@ void MAX31865::yieldForDriver() const {
         return;
     }
 #if MAX31865_HAS_ARDUINO_BACKEND
-    yield();
+    arduinoYield();
 #endif
 }
 
@@ -1505,7 +1540,7 @@ bool MAX31865::readDrdyReady() const {
         return _transport.readDrdy(_transport.user);
     }
 #if MAX31865_HAS_ARDUINO_BACKEND
-    return _drdyPin >= 0 && digitalRead(_drdyPin) == LOW;
+    return arduinoReadDrdyReady();
 #else
     return false;
 #endif

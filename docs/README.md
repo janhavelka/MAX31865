@@ -10,8 +10,13 @@ output.
   conversion helpers, threshold configuration, and fault handling.
 - [Repository contract](repository-contract.md) - repository layout, API/CLI
   requirements, validation gates, and portability rules.
-- [ESP-IDF porting notes](esp-idf-porting.md) - planned migration path from
-  Arduino/PlatformIO to an ESP-IDF component.
+- [ESP-IDF port status](IDF_PORT.md) - current transport-backed ESP-IDF
+  component status and validation plan.
+- [ESP-IDF implementation status](IDF_PORT_IMPLEMENTATION.md) - completed
+  implementation work and remaining blockers.
+- [Migration notes](MIGRATION.md) - public API migration guidance.
+- [Architecture split plan](ARCHITECTURE_SPLIT_PLAN.md) - source split log and
+  remaining backend/core work.
 - [Vendor reference material](vendor-reference-code/README.md) - copied
   Maxim/Analog Devices reference files used for comparison.
 - [Extracted source notes](extracted-md/00_document_inventory.md) - compact
@@ -31,7 +36,7 @@ output.
 
 `generated/` is local Doxygen output from the root `Doxyfile` and is ignored by
 Git. Do not edit generated files by hand; update the source headers or Markdown
-pages and regenerate.
+pages and regenerate with `doxygen Doxyfile`.
 
 ## Naming Rules
 
