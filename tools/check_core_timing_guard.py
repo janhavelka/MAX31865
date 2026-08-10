@@ -24,15 +24,15 @@ LINE_COMMENT_RE = re.compile(r"//[^\n]*")
 STRING_RE = re.compile(r'"(?:\\.|[^"\\])*"|\'(?:\\.|[^\'\\])*\'')
 
 ALLOWED_CALL_COUNTS: Dict[str, Dict[str, int]] = {
-    "src/MAX31865.cpp": {
+    "src/platform/arduino/MAX31865ArduinoBackend.cpp": {
         "millis": 1,
+        "micros": 1,
         "delay": 1,
         "delayMicroseconds": 1,
-        "yield": 2,
     },
 }
 ALLOWED_INCLUDE_COUNTS: Dict[str, int] = {
-    "include/MAX31865/MAX31865.h": 1,
+    "include/MAX31865/ArduinoBackend.h": 1,
 }
 
 TIMING_MINIMUMS = {

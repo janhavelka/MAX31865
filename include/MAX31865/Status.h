@@ -1,187 +1,192 @@
 /**
  * @file Status.h
- * @brief Status, sample, and health types for the MAX31865 driver.
+ * @brief MAX31865 status, lifecycle, sample, fault, and health contracts.
  */
 
 #pragma once
 
-#include <stddef.h>
 #include <stdint.h>
 
-/**
- * @brief Detailed lifecycle state of the driver.
- */
-enum class MAX31865State : uint8_t {
-    Uninitialized = 0, ///< Object exists but begin() has not completed.
-    Ready,            ///< Device is configured enough for commands and reads.
-    Configuring,      ///< Configuration or register programming is in progress.
-    Converting,       ///< A one-shot or continuous conversion is active.
-    Recovering,       ///< Recovery or register restore is in progress.
-    Fault             ///< Last tracked operation put the driver into a fault state.
+/** @brief Stable result codes returned by every fallible public operation. */
+enum class MAX31865Error : uint8_t
+{
+    Ok = 0, ///< Operation completed successfully.
+
+    NotInitialized, ///< No transport is bound.
+    InvalidArgument, ///< A caller argument is invalid.
+    InvalidState, ///< The lifecycle or observed state forbids the operation.
+    Busy, ///< A synchronous conversion precondition reports busy.
+    UnsupportedCommand, ///< The requested sequence is not authoritative/safe.
+    NoData, ///< One readiness check found no fresh conversion.
+    TimingUnavailable, ///< Required finite timing cannot be established.
+    RegisterAddressInvalid, ///< Register address/span is outside 0..7.
+
+    BusLockTimeout, ///< The application bus arbiter timed out.
+    BusLockFailed, ///< The application bus arbiter failed otherwise.
+    SpiTransferFailed, ///< A fixed full-duplex SPI transfer failed.
+    ChipSelectFailed, ///< Manual chip-select control failed.
+    GpioFailed, ///< The optional DRDY GPIO read failed.
+    OperationTimeout, ///< The whole public-operation deadline expired.
+    DrdyTimeout, ///< Conversion readiness missed its deadline.
+
+    RegisterVerifyFailed, ///< Readback differs from the intended register value.
+    ProbeMismatch, ///< Raw probe registers do not match the desired image.
+    ConfigurationUnknown, ///< Desired/observed device state cannot be trusted.
+    DeviceFault, ///< RTD data reports one or more latched device faults.
+    RestoreFailed, ///< Required cleanup failed after a primary result.
+    ConversionOutOfRange ///< A local RTD/temperature conversion is out of range.
 };
 
-/**
- * @brief Coarse health state shared by the unified sensor-driver examples.
- */
-enum class MAX31865DriverState : uint8_t {
-    UNINIT = 0, ///< begin() has not completed or end() was called.
-    READY,      ///< Operational with no consecutive tracked failures.
-    DEGRADED,   ///< Operational, but recent tracked operations have failed.
-    OFFLINE     ///< Consecutive failures reached offlineThreshold().
-};
+/** @brief Complete operation result with static message storage. */
+typedef struct MAX31865Status
+{
+    MAX31865Error code; ///< Stable machine-readable result code.
+    const char *msg; ///< Static-lifetime diagnostic string only.
+    int32_t detail; ///< Operation/backend-specific signed detail.
 
-/**
- * @brief Last-operation error code.
- *
- * Legacy-style methods return bool for compact Arduino call sites. Use
- * lastError(), lastErrorName(), lastOperationStatus(), or health() when callers
- * need the failure cause.
- */
-enum class MAX31865Error : uint8_t {
-    Ok = 0,                 ///< Last operation completed successfully.
-    NotInitialized,         ///< begin() has not completed successfully.
-    InvalidArgument,        ///< Caller supplied an invalid parameter.
-    InvalidConfig,          ///< begin() or RTD scaling configuration is invalid.
-    ResourceAllocationFailed, ///< Internal resource allocation failed.
-    SpiLockTimeout,         ///< SPI mutex could not be acquired in time.
-    SpiTransferFailed,      ///< SPI transaction did not complete as expected.
-    RegisterVerifyFailed,   ///< Register readback did not match the write.
-    DeviceNotFound,         ///< Probe rejected the observed bus response.
-    ConversionNotReady,     ///< Nonblocking read was requested before data was ready.
-    Timeout,                ///< Timed out waiting for conversion/fault-cycle completion.
-    Busy,                   ///< Operation is blocked by current conversion state.
-    FaultPresent            ///< RTD data reported the MAX31865 fault flag.
-};
-
-/**
- * @brief Status-return helper used by probe(), recover(), and CLI diagnostics.
- */
-typedef struct MAX31865Status {
-    MAX31865Error code; ///< Status/error code.
-    const char* msg;    ///< Static human-readable message.
-    int32_t detail;     ///< Optional numeric detail, often a raw register value.
-
-    /// True when code is MAX31865Error::Ok.
+    /** @return True exactly when code is MAX31865Error::Ok. */
     bool ok() const { return code == MAX31865Error::Ok; }
 
-    /// Alias for ok(), matching shared status helper naming.
-    bool isOk() const { return ok(); }
-
-    /// MAX31865 public operations complete synchronously today.
-    bool inProgress() const { return false; }
-
-    /// Construct an OK status.
-    static MAX31865Status Ok() {
-        MAX31865Status status = {MAX31865Error::Ok, "OK", 0};
+    /** @return A complete successful result. */
+    static MAX31865Status Ok()
+    {
+        const MAX31865Status status = {MAX31865Error::Ok, "OK", 0};
         return status;
     }
 
-    /// Construct an error status.
-    static MAX31865Status Error(MAX31865Error code, const char* msg, int32_t detail = 0) {
-        MAX31865Status status = {code, msg, detail};
+    /** @return A complete error result containing the supplied fields. */
+    static MAX31865Status Error(
+        MAX31865Error code,
+        const char *msg,
+        int32_t detail = 0)
+    {
+        const MAX31865Status status = {code, msg, detail};
         return status;
     }
 } MAX31865Status;
 
-/**
- * @brief Raw RTD register pair decoded into the 15-bit ADC code and fault flag.
- */
-typedef struct MAX31865RawRtd {
-    uint16_t raw_register; ///< Unshifted RTD MSB/LSB register value.
-    uint16_t code;         ///< 15-bit RTD ADC code, right-shifted by one.
-    bool fault;            ///< True when raw_register bit 0 reported a fault.
-} MAX31865RawRtd;
+/** @brief Stable hardware lifecycle; synchronous transient work is not exposed. */
+enum class MAX31865State : uint8_t
+{
+    Uninitialized = 0, ///< No transport binding exists.
+    Ready, ///< Configuration is known and no conversion is armed.
+    Converting, ///< A one-shot or continuous conversion is active.
+    Fault ///< Hardware selection or observed configuration is uncertain.
+};
 
-/**
- * @brief Decoded MAX31865 fault-status register.
- */
-typedef struct MAX31865FaultStatus {
-    uint8_t raw;              ///< Fault-status register masked to documented bits.
-    bool high_threshold;      ///< RTD code exceeded the high threshold.
-    bool low_threshold;       ///< RTD code was below the low threshold.
-    bool refin_high;          ///< REFIN- > 0.85 * VBIAS during fault detection.
-    bool refin_low;           ///< REFIN- < 0.85 * VBIAS during fault detection.
-    bool rtdin_low;           ///< RTDIN- < 0.85 * VBIAS during fault detection.
-    bool over_under_voltage;  ///< Protected input overvoltage/undervoltage detected.
+/** @brief Passive driver health derived from binding, lifecycle, and failures. */
+enum class MAX31865DriverState : uint8_t
+{
+    UNINIT = 0, ///< Lifecycle is Uninitialized.
+    READY, ///< Operational with no tracked failure streak.
+    DEGRADED, ///< Operational with a sub-threshold tracked failure streak.
+    OFFLINE ///< Fault lifecycle or failure streak reached its threshold.
+};
 
-    /// True when any documented fault bit is asserted.
-    bool any() const {
-        return high_threshold || low_threshold || refin_high || refin_low ||
-               rtdin_low || over_under_voltage;
+/** @brief Decoded documented bits from the latched FAULT_STATUS register. */
+struct MAX31865FaultStatus
+{
+    uint8_t raw; ///< D7:D2 with documented meanings; D1:D0 are masked out.
+    bool highThreshold; ///< RTD result reached/exceeded the high threshold.
+    bool lowThreshold; ///< RTD result reached/fell below the low threshold.
+    bool refinHigh; ///< REFIN- exceeded 0.85 x VBIAS in fault detection.
+    bool refinLow; ///< REFIN- was below 0.85 x VBIAS with FORCE- open.
+    bool rtdinLow; ///< RTDIN- was below 0.85 x VBIAS with FORCE- open.
+    bool overUnderVoltage; ///< A protected input exceeded its voltage range.
+
+    /** @return True when at least one documented fault is asserted. */
+    bool any() const
+    {
+        return highThreshold || lowThreshold || refinHigh || refinLow ||
+               rtdinLow || overUnderVoltage;
     }
-} MAX31865FaultStatus;
+};
 
-/**
- * @brief Converted RTD sample from a one-shot, poll, or continuous read path.
- */
-typedef struct MAX31865Sample {
-    uint32_t timestamp_ms;             ///< Capture timestamp from millis().
-    uint32_t sample_counter;           ///< Monotonic sample counter produced by the driver.
-    MAX31865RawRtd raw;                ///< Raw RTD register data.
-    float resistance_ohms;             ///< Resistance derived from raw.code and reference resistor.
-    float temperature_c;               ///< Temperature derived from resistance_ohms.
-    bool has_fault_status;             ///< True when fault_status was read because raw.fault was set.
-    MAX31865FaultStatus fault_status;  ///< Decoded fault bits when has_fault_status is true.
-} MAX31865Sample;
+/** @brief MAX31865Sample::flags validity bits. */
+enum : uint8_t
+{
+    MAX31865_SAMPLE_FLAG_FRAME_VALID = 1U << 0, ///< RTD bytes were read atomically.
+    MAX31865_SAMPLE_FLAG_DATA_VALID = 1U << 1, ///< Code/resistance/temperature are usable.
+    MAX31865_SAMPLE_FLAG_FAULT_STATUS = 1U << 2, ///< faultStatus is present.
+    MAX31865_SAMPLE_FLAG_READ_TIMESTAMP = 1U << 3, ///< readTimestampUs is valid.
+    MAX31865_SAMPLE_FLAG_READY_TIMESTAMP = 1U << 4 ///< readyTimestampUs is valid.
+};
 
-/**
- * @brief Register/value row returned by dumpRegisters().
- */
-typedef struct MAX31865RegisterDump {
-    uint8_t addr;       ///< Register address.
-    const char* name;   ///< Static register name.
-    uint8_t value;      ///< Register value.
-} MAX31865RegisterDump;
+/** @brief One decoded RTD frame with explicit per-field validity. */
+struct MAX31865Sample
+{
+    uint16_t rawRegister; ///< Unshifted RTD MSB/LSB register pair.
+    uint16_t rawCode; ///< Right-shifted 15-bit RTD/reference ratio code.
+    uint32_t sampleCounter; ///< Saturating driver-local valid-sample count.
+    uint32_t readTimestampUs; ///< Transport timestamp; valid with READ_TIMESTAMP.
+    uint32_t readyTimestampUs; ///< Caller timestamp; valid with READY_TIMESTAMP.
+    uint8_t channelId; ///< Caller-owned logical channel tag.
+    float resistanceOhms; ///< Calculated RTD resistance; valid with DATA_VALID.
+    float temperatureC; ///< Callendar-Van Dusen temperature; valid with DATA_VALID.
+    MAX31865FaultStatus faultStatus; ///< Decoded status with FAULT_STATUS flag.
+    uint8_t flags; ///< Bitwise MAX31865_SAMPLE_FLAG_* validity map.
+};
 
-/**
- * @brief Detailed driver health and diagnostic counters.
- */
-typedef struct MAX31865Health {
-    MAX31865State state;             ///< Detailed lifecycle state.
-    MAX31865DriverState driver_state; ///< Coarse health state.
-    MAX31865Error last_error;        ///< Last tracked error.
-    bool online;                     ///< True when driver_state is READY or DEGRADED.
-    bool converting;                 ///< True when a conversion is currently active.
-    bool auto_convert;               ///< True when continuous conversion mode is enabled.
-    uint8_t last_fault_status;       ///< Last decoded fault-status register.
-    uint8_t offline_threshold;       ///< Failure threshold for OFFLINE state.
-    uint8_t consecutive_failures;    ///< Consecutive tracked failures.
-    uint32_t total_success;          ///< Tracked successful SPI/driver operations.
-    uint32_t total_failures;         ///< Tracked failed SPI/driver operations.
-    uint32_t last_ok_ms;             ///< millis() timestamp of last tracked success.
-    uint32_t last_error_ms;          ///< millis() timestamp of last tracked failure.
-    uint32_t total_read_count;       ///< Sample read attempts.
-    uint32_t kept_sample_count;      ///< Samples successfully converted and cached.
-    size_t dropped_count;            ///< Failed sample reads.
-    size_t overrun_count;            ///< Cached sample overwritten before application read.
-    size_t buffer_depth;             ///< 0 or 1 for this one-sample cache.
-    size_t buffer_capacity;          ///< Always 1 for this driver.
-    size_t queue_high_water;         ///< Maximum observed one-sample cache depth.
-    uint32_t spi_error_count;        ///< SPI transaction failures.
-    uint32_t crc_error_count;        ///< Reserved for shared health-view parity; always zero.
-    uint32_t status_reset_count;     ///< Reserved for shared health-view parity; always zero.
-    uint32_t pga_low_alarm_count;    ///< Reserved for shared health-view parity; always zero.
-    uint32_t pga_high_alarm_count;   ///< Reserved for shared health-view parity; always zero.
-    uint32_t reference_alarm_count;  ///< Count of decoded reference fault observations.
-    uint32_t drdy_timeout_count;     ///< Conversion/fault-cycle timeout count.
-    uint32_t missed_drdy_count;      ///< Reserved for DRDY interrupt ports; always zero today.
-    uint32_t spi_lock_timeout_count; ///< SPI mutex acquisition timeout count.
-    uint32_t task_timeout_count;     ///< Reserved for task-based ports; always zero today.
-    uint32_t last_sample_timestamp_us; ///< Last sample timestamp converted to microseconds.
-    uint32_t last_sample_age_us;     ///< Age of last sample in microseconds.
-} MAX31865Health;
+/** @brief Optional caller metadata copied into a committed sample. */
+struct MAX31865ReadOptions
+{
+    bool hasReadyTimestamp; ///< True when readyTimestampUs is caller-valid.
+    uint32_t readyTimestampUs; ///< Caller clock in microseconds.
+    uint8_t channelId; ///< Caller-owned logical channel tag.
+};
 
-/**
- * @brief Convert a detailed lifecycle state to a static string.
- */
-const char* max31865StateName(MAX31865State state);
+/** @brief One address/value row used by dumpRegisters(). */
+struct MAX31865RegisterDump
+{
+    uint8_t address; ///< Register address in 0..7.
+    const char *name; ///< Static register name.
+    uint8_t value; ///< Observed register value.
+};
 
-/**
- * @brief Convert a coarse health state to a static string.
- */
-const char* max31865DriverStateName(MAX31865DriverState state);
+/** @brief Zero-I/O lifecycle, passive health, counters, and timestamps. */
+struct MAX31865Health
+{
+    MAX31865State state; ///< Stable lifecycle snapshot.
+    MAX31865DriverState driverState; ///< Derived passive health classification.
+    MAX31865Status lastOperation; ///< Complete last public-operation result.
+    bool online; ///< True exactly for READY or DEGRADED driverState.
+    bool configurationKnown; ///< True only for a verified observed image.
+    bool hasLastFaultStatus; ///< Validity for lastFaultStatus.
+    uint8_t lastFaultStatus; ///< Last documented FAULT_STATUS bits observed.
+    uint8_t offlineThreshold; ///< Nonzero failure-streak threshold.
+    uint8_t consecutiveFailures; ///< Saturating tracked-failure streak.
 
-/**
- * @brief Convert an error code to a static string.
- */
-const char* max31865ErrorName(MAX31865Error error);
+    uint32_t trackedSuccessCount; ///< Saturating lifetime public successes.
+    uint32_t trackedFailureCount; ///< Saturating lifetime public failures.
+    uint32_t sampleFrameAttemptCount; ///< Saturating RTD-frame attempts.
+    uint32_t sampleFrameSuccessCount; ///< Saturating fault-free valid frames.
+    uint32_t sampleFrameFailureCount; ///< Saturating failed/faulted frames.
+    uint32_t noDataCount; ///< Saturating nonblocking no-data observations.
+    uint32_t droppedSampleCount; ///< Saturating failed sample acquisitions.
+    uint32_t overrunCount; ///< Saturating elapsed-time overwrite observations.
+    uint32_t busLockTimeoutCount; ///< Saturating originating lock timeouts.
+    uint32_t busLockFailureCount; ///< Saturating other lock failures.
+    uint32_t spiTransferFailureCount; ///< Saturating transfer callback failures.
+    uint32_t chipSelectFailureCount; ///< Saturating CS callback failures.
+    uint32_t gpioFailureCount; ///< Saturating DRDY GPIO callback failures.
+    uint32_t drdyTimeoutCount; ///< Saturating conversion readiness timeouts.
+    uint32_t operationTimeoutCount; ///< Saturating other deadline expirations.
+    uint32_t faultObservationCount; ///< Saturating faulted RTD frames/cycles.
+    uint32_t thresholdFaultObservationCount; ///< High/low threshold observations.
+    uint32_t referenceFaultObservationCount; ///< REFIN-/RTDIN- observations.
+    uint32_t voltageFaultObservationCount; ///< Over/undervoltage observations.
+
+    bool hasLastOkMs; ///< Validity for lastOkMs; timestamp zero is valid.
+    bool hasLastErrorMs; ///< Validity for lastErrorMs; timestamp zero is valid.
+    bool hasLastSampleTimestamp; ///< Validity for lastSampleTimestampUs.
+    uint32_t lastOkMs; ///< Start time of the last tracked successful operation.
+    uint32_t lastErrorMs; ///< Start time of the last tracked failed operation.
+    uint32_t lastSampleTimestampUs; ///< Last committed DATA_VALID read time in us.
+};
+
+/** @return Static name for a lifecycle state. */
+const char *max31865StateName(MAX31865State state);
+/** @return Static name for a passive driver state. */
+const char *max31865DriverStateName(MAX31865DriverState state);
+/** @return Static name for a public error code. */
+const char *max31865ErrorName(MAX31865Error error);

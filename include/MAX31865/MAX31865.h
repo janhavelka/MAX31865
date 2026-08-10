@@ -1,442 +1,548 @@
 /**
  * @file MAX31865.h
- * @brief Arduino/ESP32 driver for the Maxim MAX31865 RTD-to-digital converter.
- *
- * The MAX31865 class owns SPI transactions, /CS framing, register access,
- * conversion timing, RTD scaling, threshold programming, fault-cycle commands,
- * and low-level health diagnostics. Application code should use this public
- * API instead of issuing raw MAX31865 register transactions directly except
- * through the explicit register diagnostic helpers.
+ * @brief Framework-neutral managed synchronous MAX31865 driver API.
  */
 
-#ifndef MAX31865_H_
-#define MAX31865_H_
+#pragma once
 
-#include <Arduino.h>
-#include <SPI.h>
-#include <freertos/FreeRTOS.h>
-#include <freertos/semphr.h>
 #include <stddef.h>
 #include <stdint.h>
 
 #include "MAX31865/CommandTable.h"
 #include "MAX31865/Config.h"
+#include "MAX31865/Protocol.h"
 #include "MAX31865/Status.h"
+#include "MAX31865/Transport.h"
 #include "MAX31865/Version.h"
 
-/**
- * @defgroup max31865 MAX31865 ESP32 Driver
- * @brief Public Arduino API for MAX31865 configuration, acquisition, conversion, and diagnostics.
- * @{
+/** @cond INTERNAL
+ * Unsupported private implementation declarations. They are forward-declared
+ * here only because the class stores no public definition for them.
  */
-/**
- * @brief MAX31865 device driver.
- */
-class MAX31865 {
-public:
-    /// Construct an uninitialized driver object.
-    MAX31865();
+struct MAX31865BusSession;
+struct MAX31865OperationContext;
+enum class MAX31865TrackingOutcome : uint8_t;
+/** @endcond */
 
-    /// End the driver and release internal resources.
+/**
+ * @brief Deterministic, application-scheduled synchronous MAX31865 driver.
+ *
+ * The class owns chip-level protocol and desired/observed state while borrowing
+ * every transport resource. It performs no hidden retry, recovery, task
+ * scheduling, logging, allocation, or application policy. Public methods are
+ * not ISR-safe or internally thread-safe; applications serialize each complete
+ * driver call and use one transport arbiter shared by every SPI-bus client.
+ * Lifecycle, argument, and timeout validation completes before a protocol
+ * operation is created; a rejected precondition invokes no transport callback
+ * and is not a tracked health failure.
+ */
+class MAX31865 final
+{
+public:
+    /** @brief Construct inert in Uninitialized state without callbacks. */
+    MAX31865();
+    /** @brief Destroy with zero callbacks and zero device I/O. */
     ~MAX31865();
 
-    /**
-     * @brief Initialize SPI, GPIO, cached scaling settings, and device registers.
-     * @param config Typed begin configuration.
-     * @return true when the driver is ready for commands.
-     */
-    bool begin(const MAX31865BeginConfig& config);
+    MAX31865(const MAX31865 &) = delete;
+    MAX31865 &operator=(const MAX31865 &) = delete;
+    MAX31865(MAX31865 &&) = delete;
+    MAX31865 &operator=(MAX31865 &&) = delete;
 
     /**
-     * @brief Compact begin overload using default PT100/400-ohm scaling.
-     * @param spi SPI bus object.
-     * @param sckPin SPI SCLK pin.
-     * @param misoPin SPI MISO pin connected to MAX31865 SDO.
-     * @param mosiPin SPI MOSI pin connected to MAX31865 SDI.
-     * @param csPin MAX31865 /CS pin.
-     * @param drdyPin Optional /DRDY pin, or -1 when not wired.
-     * @param spiHz SPI clock in Hz; zero selects the default.
-     * @return true when begin() and probe verification succeed.
+     * @brief Bind a validated borrowed transport and apply the startup image.
+     * @return Complete status. Invalid input performs no callback. A valid
+     * binding remains available for recover() after an I/O failure.
+     * @note `config.powerReadyDelayMs` is one explicit pre-protocol sleep and
+     * is not charged to `config.defaultOperationTimeoutMs`; total begin wall
+     * time can include that delay plus one bounded protocol deadline.
      */
-    bool begin(SPIClass& spi,
-               int sckPin,
-               int misoPin,
-               int mosiPin,
-               int csPin,
-               int drdyPin = -1,
-               uint32_t spiHz = MAX31865_DEFAULT_SPI_HZ);
-
-    /// Disable conversion, release the SPI mutex, and return to Uninitialized state.
+    MAX31865Status begin(const MAX31865BeginConfig &config);
+    /** @brief Zero-I/O, idempotent unbind restoring constructor defaults. */
     void end();
 
+    /** @return Current stable hardware lifecycle; performs no callback. */
+    MAX31865State state() const;
+    /** @return Complete terminal status of the last public operation. */
+    MAX31865Status lastOperationStatus() const;
+    /** @return Zero-I/O passive health and lifetime-counter snapshot. */
+    MAX31865Health health() const;
+    /** @brief Clear lifetime/observation counters without changing state. */
+    void clearLifetimeCounters();
+    /** @brief Set a nonzero passive-health failure threshold. */
+    MAX31865Status setOfflineThreshold(uint8_t threshold);
+    /** @return Stored default whole-operation timeout in milliseconds. */
+    uint32_t defaultOperationTimeoutMs() const;
+
     /**
-     * @brief Service cached conversion-ready state from an application loop.
-     * @param nowMs Current millis() value supplied by the caller.
+     * @brief Advance only elapsed-time readiness/overrun bookkeeping.
+     * @param nowMs Caller timestamp on the same modulo-2^32 timebase as the
+     * transport clock. This method performs no callback and never reads DRDY.
+     * @note When DRDY is absent, call at least once per signed half-range
+     * (less than 2^31 ms, about 24.9 days) so modulo target ordering remains
+     * unambiguous.
      */
     void tick(uint32_t nowMs);
 
-    /// Detailed lifecycle state.
-    MAX31865State state() const { return _state; }
-    /// Coarse health state.
-    MAX31865DriverState driverState() const { return _driverState; }
-    /// Alias for driverState(), matching the unified example contract.
-    MAX31865DriverState healthState() const { return _driverState; }
-    /// True after begin() succeeds and before end() is called.
-    bool isInitialized() const { return _initialized; }
-    /// True when the driver is READY or DEGRADED.
-    bool isOnline() const;
-    /// Last tracked error code.
-    MAX31865Error lastError() const { return _lastError; }
-    /// Last tracked error code as a static string.
-    const char* lastErrorName() const { return max31865ErrorName(_lastError); }
-    /// Last tracked operation as a MAX31865Status object.
-    MAX31865Status lastOperationStatus() const;
-    /// millis() timestamp of last tracked success.
-    uint32_t lastOkMs() const { return _lastOkMs; }
-    /// millis() timestamp of last tracked failure.
-    uint32_t lastErrorMs() const { return _lastErrorMs; }
-    /// Consecutive tracked failures.
-    uint8_t consecutiveFailures() const { return _consecutiveFailures; }
-    /// Total tracked failures.
-    uint32_t totalFailures() const { return _totalFailures; }
-    /// Total tracked successes.
-    uint32_t totalSuccess() const { return _totalSuccess; }
-    /// Configure failures required before the health state becomes OFFLINE.
-    void setOfflineThreshold(uint8_t threshold);
-    /// Current OFFLINE threshold.
-    uint8_t offlineThreshold() const { return _offlineThreshold; }
-    /// Current SPI lock timeout in milliseconds.
-    uint32_t spiLockTimeoutMs() const { return _spiLockTimeoutMs; }
-    /// Set SPI lock timeout in milliseconds; zero selects the default.
-    void setSpiLockTimeoutMs(uint32_t timeoutMs);
-    /// Snapshot detailed health and counters.
-    MAX31865Health health() const;
-    /// Reset health counters without changing device configuration.
-    void clearHealthCounters();
-    /// Probe the configuration register without changing health counters.
-    MAX31865Status probe();
-    /// Re-apply cached configuration after a recoverable bus/device fault.
-    MAX31865Status recover();
+    /**
+     * @brief Read-only raw writable-image probe that preserves counters and
+     * lastOperationStatus(). A mismatch invalidates observed configuration.
+     * @param[out] out Committed only after all required reads succeed.
+     * @note Unlike devices with an ID register, MAX31865 identity can only be
+     * inferred from verified register behavior. This probe performs no write.
+     */
+    MAX31865Status probe(MAX31865DeviceInfo &out);
+    /**
+     * @brief Probe with an explicit nonzero whole-operation deadline.
+     * @param[out] out Committed only after every required read succeeds.
+     * @param timeoutMs Nonzero deadline shared by the complete probe.
+     * @note Like probe(out), this overload preserves health counters and
+     * lastOperationStatus().
+     */
+    MAX31865Status probe(MAX31865DeviceInfo &out, uint32_t timeoutMs);
+    /**
+     * @brief Explicit tracked recovery that reapplies the complete desired image.
+     * @param timeoutMs Nonzero whole-operation deadline.
+     * @note MAX31865 has no software-reset command or RESET pin. Recovery first
+     * establishes CS high and normally-off CONFIG, then restores and verifies
+     * persistent state. It never restarts conversion implicitly.
+     */
+    MAX31865Status recover(uint32_t timeoutMs);
 
-    /// Set SPI clock in Hz; zero selects MAX31865_DEFAULT_SPI_HZ.
-    void setSpiHz(uint32_t spiHz);
-    /// Current SPI clock in Hz.
-    uint32_t spiHz() const { return _spiHz; }
-    /// Cached RTD wiring mode.
-    MAX31865WireMode wireMode() const { return _wireMode; }
-    /// Cached filter mode.
-    MAX31865Filter filter() const { return _filter; }
-    /// Cached VBIAS state.
-    bool biasEnabled() const { return _biasEnabled; }
-    /// Cached continuous-conversion state.
-    bool autoConvertEnabled() const { return _autoConvert; }
-    /// Configured precision reference resistor value in ohms.
-    float referenceResistorOhms() const { return _referenceResistorOhms; }
-    /// Configured RTD nominal value at 0 C.
-    float rtdNominalOhms() const { return _rtdNominalOhms; }
-    /// Configured input-filter RC time constant in microseconds.
-    uint32_t inputFilterTimeConstantUs() const { return _inputFilterTimeConstantUs; }
-    /// Current Callendar-Van Dusen coefficients.
-    MAX31865RtdCoefficients rtdCoefficients() const { return _coefficients; }
+    /** @name Typed configuration, legal only in Ready. */
+    /** @{ */
+    MAX31865Status applyConfiguration(
+        const MAX31865DeviceConfig &config,
+        uint32_t timeoutMs);
+    MAX31865Status readConfiguration(
+        MAX31865Settings &out,
+        uint32_t timeoutMs);
+    MAX31865Status configureMeasurement(
+        MAX31865WireMode wireMode,
+        MAX31865Filter filter,
+        uint32_t timeoutMs);
+    MAX31865Status setBias(bool enabled, uint32_t timeoutMs);
+    MAX31865Status setWireMode(MAX31865WireMode mode, uint32_t timeoutMs);
+    MAX31865Status setFilter(MAX31865Filter filter, uint32_t timeoutMs);
     /**
-     * @brief Update RTD scaling parameters and optional coefficients.
-     * @param referenceResistorOhms Precision reference resistor in ohms.
-     * @param rtdNominalOhms RTD nominal resistance at 0 C.
-     * @param coefficients Optional Callendar-Van Dusen coefficients. When null,
-     * the existing coefficients are kept.
-     * @return true when parameters are finite and inside supported limits.
-     *
-     * This only changes conversion math. It does not write MAX31865 registers.
+     * @brief Replace local RTD scaling/curve configuration without device I/O.
+     * @note Legal only in Ready. Raw device thresholds are unchanged.
      */
-    bool setRtdParameters(float referenceResistorOhms,
-                          float rtdNominalOhms,
-                          const MAX31865RtdCoefficients* coefficients = nullptr);
+    MAX31865Status setRtdConfig(const MAX31865RtdConfig &config);
+    /** @return Current local RTD scaling configuration; zero I/O. */
+    MAX31865RtdConfig rtdConfig() const;
+    /** @} */
 
-    /// Enable or disable VBIAS.
-    bool setBias(bool enable);
-    /// Enable or disable continuous conversion mode.
-    bool setAutoConvert(bool enable);
-    /// Enable continuous conversion mode.
-    bool startContinuous() { return setAutoConvert(true); }
-    /// Stop continuous conversion mode.
-    bool stop();
-    /// Set RTD wiring mode and write the CONFIG register.
-    bool setWireMode(MAX31865WireMode mode);
-    /// Set notch-filter mode and write the CONFIG register.
-    bool setFilter(MAX31865Filter filter);
-    /// Atomically configure wiring/filter and optional continuous conversion.
-    bool configureMeasurement(MAX31865WireMode wireMode, MAX31865Filter filter, bool autoConvert);
+    /** @name Bounded conversion control. */
+    /** @{ */
+    /** @brief Enable VBIAS, settle, flush stale DRDY, and start auto conversion. */
+    MAX31865Status startContinuous(uint32_t timeoutMs);
+    /** @brief Enable/settle VBIAS, flush stale DRDY, and trigger one one-shot. */
+    MAX31865Status triggerSingleConversion(uint32_t timeoutMs);
+    /**
+     * @brief Disable conversion and restore the configured idle VBIAS state.
+     * @note A one-shot already committed by a CS rising edge cannot be cancelled
+     * authoritatively. When one is still armed, stop waits for a proven result,
+     * discards it, and returns Ready only after a proven normally-off CONFIG
+     * write. A protected-input voltage fault can halt the ADC beyond the normal
+     * 55/66 ms maximum; DeviceFault/timeout then preserves the quarantine for a
+     * later stop() or recover() call.
+     */
+    MAX31865Status stop(uint32_t timeoutMs);
+    /** @} */
 
+    /** @name Synchronous sampling. */
+    /** @{ */
     /**
-     * @brief Perform a blocking one-shot conversion and convert the sample.
-     * @param out Converted sample output.
-     * @param timeoutMs Maximum wait for conversion readiness.
-     * @return true when a non-faulted sample was read and converted.
-     *
-     * The method clears latched faults, enables VBIAS, waits the configured
-     * input-filter settle time, starts one-shot conversion, and optionally turns
-     * VBIAS back off. If the RTD fault bit is set, it decodes the fault register
-     * and returns false with lastError() set to FaultPresent.
+     * @brief Check readiness exactly once.
+     * @note DRDY is readiness-authoritative when provided. If it remains high
+     * after the maximum horizon, one bounded FAULT_STATUS read detects D2 ADC
+     * halt. Without DRDY, elapsed timing plus the same D2 check is used. Output
+     * is preserved on failure.
      */
-    bool readSingle(MAX31865Sample& out, uint32_t timeoutMs = 200);
+    MAX31865Status dataReady(bool &out);
     /**
-     * @brief Nonblocking sample read when conversion data is ready.
-     * @param out Converted sample output.
-     * @return true when a sample was read. A simple not-ready condition returns
-     * false without changing the health counters.
+     * @brief Check readiness once with an explicit nonzero I/O deadline.
+     * @param[out] out Committed only on success.
+     * @param timeoutMs Nonzero deadline for GPIO/SPI callbacks in this check.
      */
-    bool poll(MAX31865Sample& out);
-    /// True when DRDY, elapsed timing, or the one-sample cache indicates data is ready.
-    bool available() const;
-    /// Alias for available() with clearer production-call-site wording.
-    bool isDataReady() const { return available(); }
+    MAX31865Status dataReady(bool &out, uint32_t timeoutMs);
+    /** @brief Check once and consume one fresh armed conversion. */
+    MAX31865Status poll(
+        MAX31865Sample &out,
+        const MAX31865ReadOptions *options = nullptr);
     /**
-     * @brief Return a status code instead of changing diagnostics when data is not ready.
-     * @param out Converted sample output.
-     * @return Ok on sample read, ConversionNotReady when data is not ready, or
-     * the last operation status on a real read failure.
+     * @brief Poll once with an explicit nonzero whole-operation deadline.
+     * @param[out] out Committed only for an acquired frame (including a
+     * DeviceFault frame); otherwise preserved.
+     * @param timeoutMs Nonzero deadline shared by readiness, data, and cleanup.
+     * @param options Optional caller metadata copied only with a frame.
      */
-    MAX31865Status readIfReady(MAX31865Sample& out);
-    /// Read and convert the current RTD registers.
-    /// @param out Converted sample output.
-    /// @return true when RTD registers were read and converted.
-    bool readSample(MAX31865Sample& out);
-    /// Number of failed sample reads.
-    size_t droppedCount() const { return _droppedCount; }
-    /// Number of cached samples overwritten before application read.
-    size_t overrunCount() const { return _overrunCount; }
-    /// Number of sample read attempts.
-    uint32_t totalReadCount() const { return _totalReadCount; }
-    /// Number of samples successfully converted and cached.
-    uint32_t keptSampleCount() const { return _keptSampleCount; }
+    MAX31865Status poll(
+        MAX31865Sample &out,
+        uint32_t timeoutMs,
+        const MAX31865ReadOptions *options = nullptr);
+    /**
+     * @brief Read RTD registers immediately without a freshness check.
+     * @warning In Ready this can return the buffered previous conversion. It is
+     * legal while Converting only for continuous mode, never an armed one-shot.
+     */
+    MAX31865Status readSample(
+        MAX31865Sample &out,
+        const MAX31865ReadOptions *options = nullptr);
+    /**
+     * @brief Read immediately with an explicit nonzero I/O deadline.
+     * @param[out] out Preserved unless a complete RTD frame is committed.
+     * @param timeoutMs Nonzero deadline shared by required register reads.
+     * @param options Optional caller metadata copied only with a frame.
+     */
+    MAX31865Status readSample(
+        MAX31865Sample &out,
+        uint32_t timeoutMs,
+        const MAX31865ReadOptions *options = nullptr);
+    /**
+     * @brief Wait within one deadline and consume an already armed result.
+     * @param[out] out Committed only for an acquired frame (including a
+     * DeviceFault frame); otherwise preserved.
+     * @param timeoutMs Zero performs one readiness check without sleeping and
+     * returns NoData unless the result is already ready; otherwise the nonzero
+     * readiness/data/cleanup deadline.
+     * @param options Optional caller metadata copied only with a frame.
+     */
+    MAX31865Status readSingle(
+        MAX31865Sample &out,
+        uint32_t timeoutMs,
+        const MAX31865ReadOptions *options = nullptr);
+    /**
+     * @brief Trigger, wait for, read, and restore idle VBIAS under one deadline.
+     * @note A readiness timeout leaves the conversion armed so readSingle() or
+     * stop() can finish it without accepting a stale result.
+     */
+    MAX31865Status readOneShot(
+        MAX31865Sample &out,
+        uint32_t timeoutMs,
+        const MAX31865ReadOptions *options = nullptr);
+    /** @} */
 
-    /// Read the raw RTD register pair.
-    /// @param out Raw register decode output.
-    /// @return true when both RTD bytes were read.
-    bool readRawRtd(MAX31865RawRtd& out);
-    /// Read resistance from an already-ready conversion.
-    /// @param[out] ohms Converted resistance.
-    /// @return true when a sample was read and converted.
-    bool readResistance(float& ohms);
-    /// Read temperature from an already-ready conversion.
-    /// @param[out] celsius Converted temperature.
-    /// @return true when a sample was read and converted.
-    bool readTemperature(float& celsius);
-    /// Read and decode the fault-status register.
-    /// @param[out] out Decoded fault status.
-    /// @return true when the fault-status register was read.
-    bool readFaultStatus(MAX31865FaultStatus& out);
-    /// Clear the latched fault-status register.
-    /// @return true when the CONFIG fault-clear write succeeds.
-    bool clearFaults();
+    /** @name Fault status, fault cycles, and thresholds. */
+    /** @{ */
     /**
-     * @brief Run the MAX31865 automatic fault-detection cycle.
-     * @param out Decoded fault status.
-     * @param timeoutMs Maximum wait for the fault-cycle field to clear.
-     * @return true when the cycle completed and the fault register was read.
-     *
-     * Continuous conversion must be stopped before calling this method. The
-     * method leaves VBIAS enabled and conversion normally off, matching the
-     * device fault-detection sequence.
+     * @brief Read/decode latched fault status; asserted bits return DeviceFault.
+     * @param[out] out Committed after a complete status frame.
+     * @param timeoutMs Zero permits one immediate attempt; otherwise the
+     * nonzero whole-operation deadline.
      */
-    bool runAutoFaultDetection(MAX31865FaultStatus& out, uint32_t timeoutMs = 10);
+    MAX31865Status readFaultStatus(
+        MAX31865FaultStatus &out,
+        uint32_t timeoutMs);
+    /** @brief Clear latched fault bits with the required isolated D1 command. */
+    MAX31865Status clearFaults(uint32_t timeoutMs);
     /**
-     * @brief Run the MAX31865 manual two-step fault-detection cycle.
-     * @param out Decoded fault status.
-     * @param settleDelayUs External-settling delay inserted before the first
-     * manual fault step and again in the inter-step delay.
-     * @param timeoutMs Maximum wait for the fault-cycle field to clear.
-     * @return true when the cycle completed and the fault register was read.
+     * @brief Clear stale faults and run one fresh automatic fault cycle.
+     * @note Rejected before I/O when the configured external RC time constant is
+     * greater than 100 us, for which the data sheet requires manual timing.
+     * @note After a transient command may commit, deadline expiry permits one
+     * no-wait restore attempt; output is committed only after restore succeeds.
      */
-    bool runManualFaultDetection(MAX31865FaultStatus& out,
-                                 uint32_t settleDelayUs,
-                                 uint32_t timeoutMs = 10);
+    MAX31865Status runAutomaticFaultDetection(
+        MAX31865FaultStatus &out,
+        uint32_t timeoutMs);
+    /**
+     * @brief Clear stale faults and run both manual fault-detection phases.
+     * @note Waits for both internal step-1 phases and then at least five complete
+     * configured external RC time constants before issuing manual step 2.
+     * @note An expired no-wait cleanup never advances FORCE- before that timing;
+     * unresolved step 1 remains Fault until recover(timeout) completes it.
+     */
+    MAX31865Status runManualFaultDetection(
+        MAX31865FaultStatus &out,
+        uint32_t timeoutMs);
 
-    /// Program low/high thresholds as 15-bit RTD ADC codes.
-    /// @param lowCode Low threshold code; must be 0..32767.
-    /// @param highCode High threshold code; must be 0..32767.
-    /// @return true when all threshold bytes were written.
-    bool setFaultThresholdsRaw(uint16_t lowCode, uint16_t highCode);
-    /// Read low/high thresholds as 15-bit RTD ADC codes.
-    /// @param[out] out Threshold codes.
-    /// @return true when all threshold bytes were read.
-    bool getFaultThresholdsRaw(MAX31865FaultThresholds& out);
-    /// Program low/high thresholds in ohms.
-    /// @param lowOhms Low threshold resistance.
-    /// @param highOhms High threshold resistance.
-    /// @return true when values are finite and the raw thresholds are written.
-    bool setFaultThresholdsResistance(float lowOhms, float highOhms);
-    /// Read low/high thresholds in ohms.
-    /// @param[out] lowOhms Low threshold resistance.
-    /// @param[out] highOhms High threshold resistance.
-    /// @return true when raw thresholds were read and converted.
-    bool getFaultThresholdsResistance(float& lowOhms, float& highOhms);
-    /// Program low/high thresholds in Celsius.
-    /// @param lowC Low threshold temperature.
-    /// @param highC High threshold temperature.
-    /// @return true when values are finite and the raw thresholds are written.
-    bool setFaultThresholdsTemperature(float lowC, float highC);
+    /** @brief Set ordered inclusive 15-bit thresholds under one nonzero deadline. */
+    MAX31865Status setFaultThresholdsRaw(
+        const MAX31865FaultThresholds &thresholds,
+        uint32_t timeoutMs);
+    /** @brief Read raw thresholds; preserves out on any failure. */
+    MAX31865Status readFaultThresholdsRaw(
+        MAX31865FaultThresholds &out,
+        uint32_t timeoutMs);
+    /** @brief Set finite, nonnegative, ordered resistance thresholds. */
+    MAX31865Status setFaultThresholdsResistance(
+        float lowOhms,
+        float highOhms,
+        uint32_t timeoutMs);
+    /** @brief Read resistance thresholds; preserves both outputs on failure. */
+    MAX31865Status readFaultThresholdsResistance(
+        float &lowOhms,
+        float &highOhms,
+        uint32_t timeoutMs);
+    /** @brief Set ordered in-domain CVD temperature thresholds. */
+    MAX31865Status setFaultThresholdsTemperature(
+        float lowC,
+        float highC,
+        uint32_t timeoutMs);
+    /** @brief Read temperature thresholds; preserves both outputs on failure. */
+    MAX31865Status readFaultThresholdsTemperature(
+        float &lowC,
+        float &highC,
+        uint32_t timeoutMs);
+    /** @} */
 
-    /// Read one register for diagnostics, returning false on invalid address or bus failure.
-    /// @param addr Register address.
-    /// @param[out] value Register value.
-    /// @return true when the register was read.
-    bool readReg(uint8_t addr, uint8_t& value);
-    /// Read one register for diagnostics; returns 0xFF on failure for compact sketches.
-    /// @param addr Register address.
-    /// @return Register value, or 0xFF on failure.
-    uint8_t readReg(uint8_t addr);
-    /// Read a contiguous register range for diagnostics.
-    /// @param startAddr First register address.
-    /// @param[out] out Destination buffer.
-    /// @param len Number of registers to read.
-    /// @return true when the whole range was read.
-    bool readRegs(uint8_t startAddr, uint8_t* out, size_t len);
-    /// Write one writable register for diagnostics.
-    /// @param addr Writable register address.
-    /// @param value Value to write.
-    /// @return true when the register write succeeds.
-    bool writeReg(uint8_t addr, uint8_t value);
+    /** @name Validated register diagnostics, legal only in Ready. */
+    /** @{ */
     /**
-     * @brief Write and verify one writable register for diagnostics.
-     * @param addr Register address.
-     * @param value Value to write.
-     * @param readBack Optional readback output.
-     * @return true when the writable, non-self-clearing bits match readback.
-     *
-     * CONFIG self-clearing command bits are masked from the comparison.
+     * @brief Read one register for diagnostics.
+     * @param address Register address 00h..07h.
+     * @param[out] out Committed only after a complete successful frame.
+     * @param timeoutMs Zero permits one immediate attempt; otherwise the
+     * nonzero whole-operation deadline.
+     * @note Reading RTD_MSB or RTD_LSB acknowledges readiness and drives DRDY
+     * high, so this is not acquisition-neutral.
      */
-    bool writeRegVerify(uint8_t addr, uint8_t value, uint8_t* readBack = nullptr);
-    /// Dump the documented register map.
-    /// @param[out] out Destination rows.
-    /// @param max Capacity of out.
-    /// @return Number of rows written.
-    size_t dumpRegisters(MAX31865RegisterDump* out, size_t max);
+    MAX31865Status readRegister(
+        uint8_t address,
+        uint8_t &out,
+        uint32_t timeoutMs);
     /**
-     * @brief Read and decode the current device settings.
-     * @param out Register-derived settings snapshot.
-     * @return true when all documented registers were read.
+     * @brief Read one contiguous diagnostic register span.
+     * @param startAddress First register address 00h..07h.
+     * @param[out] out Caller buffer preserved on failure.
+     * @param length Number of contiguous bytes, bounded by the register map.
+     * @param timeoutMs Must be nonzero when length is greater than one; zero is
+     * accepted only for a one-byte immediate attempt.
+     * @note Any span containing RTD_MSB or RTD_LSB acknowledges readiness and
+     * drives DRDY high, even when the caller discards those bytes.
      */
-    bool getSettings(MAX31865Settings& out);
+    MAX31865Status readRegisters(
+        uint8_t startAddress,
+        uint8_t *out,
+        size_t length,
+        uint32_t timeoutMs);
     /**
-     * @brief Read and decode the current device settings with explicit status.
-     * @param out Register-derived settings snapshot.
-     * @return Ok when all documented registers were read, otherwise last operation status.
+     * @brief Apply one persistent writable byte through the typed image engine.
+     * @note CONFIG command bits D5/D3:D1 are rejected; use typed operations.
      */
-    MAX31865Status getSettingsStatus(MAX31865Settings& out);
+    MAX31865Status writeRegister(
+        uint8_t address,
+        uint8_t value,
+        uint32_t timeoutMs);
     /**
-     * @brief Restore CONFIG and threshold registers to documented power-on defaults.
-     * @return true when every writable reset value was written.
+     * @brief Apply through the image engine and add target diagnostic readback.
+     * @param address Persistent writable address (CONFIG or threshold byte).
+     * @param value Candidate persistent value; CONFIG command bits are invalid.
+     * @param[out] readBack Committed only after apply, full-image verification,
+     * and the final target read all succeed.
+     * @param timeoutMs Nonzero deadline shared by apply and verification.
      */
-    bool resetRegisters();
+    MAX31865Status writeRegisterVerified(
+        uint8_t address,
+        uint8_t value,
+        uint8_t &readBack,
+        uint32_t timeoutMs);
     /**
-     * @brief Safe write/readback test using a threshold register, then restoring it.
-     * @param readBack Optional observed test-pattern readback.
-     * @return true when the test pattern was verified and the original value restored.
+     * @brief Read all eight registers and build a named dump transactionally.
+     * @warning Reading RTD address 01h/02h acknowledges DRDY and can consume a
+     * pending readiness indication. This method is therefore Ready-only.
      */
-    bool registerReadbackTest(uint8_t* readBack = nullptr);
+    MAX31865Status dumpRegisters(
+        MAX31865RegisterDump *out,
+        size_t capacity,
+        size_t &count,
+        uint32_t timeoutMs);
+    /**
+     * @brief Restore writable POR values and explicitly clear latched faults.
+     * @note This is not a device reset; read-only RTD data is unaffected and a
+     * persistent voltage fault can reassert immediately.
+     */
+    MAX31865Status restoreWritableDefaults(uint32_t timeoutMs);
+    /**
+     * @brief Destructive threshold-byte write/read/restore communication test.
+     * @note A committed pattern receives one no-wait restore attempt after
+     * deadline expiry; readBack is published only after restore verification.
+     */
+    MAX31865Status registerReadbackTest(
+        uint8_t &readBack,
+        uint32_t timeoutMs);
+    /** @} */
 
-    /// Convert a 15-bit RTD ADC code to resistance.
-    float codeToResistance(uint16_t code) const;
-    /// Convert resistance to the nearest 15-bit RTD ADC code.
-    uint16_t resistanceToCode(float resistanceOhms) const;
-    /// Convert resistance to Celsius using Callendar-Van Dusen equations.
-    float resistanceToTemperature(float resistanceOhms) const;
-    /// Convert Celsius to RTD resistance.
-    float temperatureToResistance(float temperatureC) const;
-    /// Convert Celsius to the nearest 15-bit RTD ADC code.
-    uint16_t temperatureToCode(float temperatureC) const;
-    /// Datasheet conversion time for the current filter mode.
-    uint32_t getSingleConversionTimeMs() const;
-    /// Datasheet continuous-conversion cadence for the current filter mode.
-    uint32_t getContinuousConversionTimeMs() const;
-    /// Bias-settle delay derived from inputFilterTimeConstantUs.
-    uint32_t getBiasSettleTimeUs() const;
-
-    /// Convert a 15-bit RTD ADC code to full-scale ratio.
-    /// @param code 15-bit RTD ADC code.
-    /// @return code / 32768.0.
-    static float codeToRatio(uint16_t code);
-    /// Decode the raw fault-status register.
-    /// @param raw Raw fault-status register value.
-    /// @param[out] out Decoded D7..D2 documented fault bits; D1..D0 are masked out.
-    /// @return true when any documented fault bit is set.
-    static bool decodeFaultStatus(uint8_t raw, MAX31865FaultStatus& out);
+    /** @name Local status-returning conversion helpers; no callbacks. */
+    /** @{ */
+    static MAX31865Status codeToRatio(uint16_t code, float &out);
+    MAX31865Status codeToResistance(uint16_t code, float &out) const;
+    MAX31865Status resistanceToCode(float resistanceOhms, uint16_t &out) const;
+    MAX31865Status resistanceToTemperature(float resistanceOhms, float &out) const;
+    MAX31865Status temperatureToResistance(float temperatureC, float &out) const;
+    MAX31865Status temperatureToCode(float temperatureC, uint16_t &out) const;
+    /** @return Maximum one-shot conversion duration for the desired filter. */
+    uint32_t singleConversionTimeMs() const;
+    /** @return Maximum continuous-conversion period for the desired filter. */
+    uint32_t continuousConversionTimeMs() const;
+    /** @return Ceil(10.5 * external RC) + 1 ms, saturated to uint32_t. */
+    uint32_t biasSettleTimeUs() const;
+    /** @return Decoded documented D7:D2 fault bits. */
+    static MAX31865FaultStatus decodeFaultStatus(uint8_t raw);
+    /** @} */
 
 private:
-    bool applyConfig();
-    bool readRegister(uint8_t addr, uint8_t& value);
-    bool readRegisterNoHealth(uint8_t addr, uint8_t& value);
-    bool writeRegister(uint8_t addr, uint8_t value);
-    bool writeRegisterNoHealth(uint8_t addr, uint8_t value);
-    bool transfer(const uint8_t* tx, uint8_t* rx, size_t len);
-    bool transferRaw(const uint8_t* tx, uint8_t* rx, size_t len, bool recordHealth);
-    bool lockSpi(bool recordHealth);
-    void unlockSpi();
-    void resetBeginRuntimeState();
-    bool waitForFaultCycleDone(uint32_t timeoutMs);
-    bool conversionReady();
-    bool cacheSample(MAX31865Sample& sample);
-    void setState(MAX31865State state);
-    void setFault(MAX31865Error error);
-    void setLastError(MAX31865Error error);
-    void recordOk();
-    void recordFailure(MAX31865Error error);
-    uint32_t nowMs() const;
-    void delayMs(uint32_t ms) const;
-    void delayUs(uint32_t us) const;
+    MAX31865Status validateTransport(const MAX31865Transport &transport) const;
+    MAX31865Status validateDeviceConfig(const MAX31865DeviceConfig &config) const;
+    MAX31865Status validateRtdConfig(const MAX31865RtdConfig &config) const;
+    MAX31865Status validateTimeout(uint32_t timeoutMs, bool allowZero) const;
+    MAX31865Status requireReady() const;
+    MAX31865Status requireOperational() const;
 
-    SPIClass* _spi;
-    SPISettings _spiSettings;
-    SemaphoreHandle_t _spiMutex;
-    uint32_t _spiHz;
-    uint32_t _spiLockTimeoutMs;
-    int _csPin;
-    int _drdyPin;
+    MAX31865OperationContext makeOperation(uint32_t timeoutMs) const;
+    uint32_t deadlineRemainingMs(const MAX31865OperationContext &operation) const;
+    bool deadlineExpired(const MAX31865OperationContext &operation) const;
+    MAX31865Status sleepWithinDeadline(
+        uint32_t delayUs,
+        MAX31865OperationContext &operation,
+        MAX31865Error timeoutCode);
 
-    bool _initialized;
+    MAX31865Status synchronizeChipSelect(MAX31865OperationContext &operation);
+    MAX31865Status openSession(
+        MAX31865BusSession &session,
+        MAX31865OperationContext &operation);
+    MAX31865Status transferInSession(
+        MAX31865BusSession &session,
+        const uint8_t *tx,
+        uint8_t *rx,
+        size_t length,
+        MAX31865OperationContext &operation);
+    MAX31865Status closeSession(
+        MAX31865BusSession &session,
+        MAX31865OperationContext &operation);
+    MAX31865Status transact(
+        const uint8_t *tx,
+        uint8_t *rx,
+        size_t length,
+        MAX31865OperationContext &operation);
+
+    MAX31865Status readRegistersInternal(
+        uint8_t startAddress,
+        uint8_t *out,
+        size_t length,
+        MAX31865OperationContext &operation);
+    MAX31865Status writeRegistersInternal(
+        uint8_t startAddress,
+        const uint8_t *values,
+        size_t length,
+        MAX31865OperationContext &operation);
+    MAX31865Status readPersistentImage(
+        uint8_t &config,
+        uint8_t thresholds[4],
+        MAX31865OperationContext &operation);
+    MAX31865Status verifyDesiredImage(MAX31865OperationContext &operation);
+    MAX31865Status applyConfigurationInternal(
+        const MAX31865DeviceConfig &config,
+        bool commitDesired,
+        MAX31865OperationContext &operation);
+    MAX31865Status prepareRegisterWriteCandidate(
+        uint8_t address,
+        uint8_t value,
+        MAX31865DeviceConfig &out) const;
+    MAX31865Status faultThresholdCodeToTemperature(
+        uint16_t code,
+        float &out) const;
+    MAX31865Status writeRuntimeConfig(
+        bool bias,
+        bool continuous,
+        uint8_t commandBits,
+        MAX31865OperationContext &operation);
+
+    MAX31865Status clearFaultsInternal(MAX31865OperationContext &operation);
+    MAX31865Status readFaultStatusInternal(
+        MAX31865FaultStatus &out,
+        MAX31865OperationContext &operation,
+        bool countObservation);
+    MAX31865Status waitForFaultCycle(
+        MAX31865OperationContext &operation);
+    MAX31865Status resolveFaultCycleInternal(
+        MAX31865OperationContext &operation);
+    MAX31865Status flushRtdReadyState(MAX31865OperationContext &operation);
+    MAX31865Status dataReadyInternal(
+        bool &out,
+        MAX31865OperationContext &operation);
+    MAX31865Status waitForReadyInternal(MAX31865OperationContext &operation);
+    MAX31865Status startContinuousInternal(MAX31865OperationContext &operation);
+    MAX31865Status triggerSingleInternal(MAX31865OperationContext &operation);
+    MAX31865Status stopInternal(MAX31865OperationContext &operation);
+    MAX31865Status restoreIdleAfterPrimaryFailure(
+        const MAX31865Status &primary,
+        MAX31865OperationContext &operation);
+    MAX31865Status restoreIdleAfterConsumedOneShot(
+        const MAX31865Status &primary,
+        MAX31865OperationContext &operation);
+    MAX31865Status readSampleInternal(
+        MAX31865Sample &out,
+        const MAX31865ReadOptions *options,
+        MAX31865OperationContext &operation,
+        bool requireFresh);
+    void updateTimedReadiness(uint32_t nowMs);
+    void commitSample(MAX31865Sample &out, MAX31865Sample &candidate);
+
+    MAX31865Status finishOperation(
+        const MAX31865Status &status,
+        MAX31865TrackingOutcome tracking,
+        const MAX31865OperationContext &operation);
+    MAX31865TrackingOutcome trackingFor(
+        const MAX31865Status &status,
+        bool trackedSuccess) const;
+    bool isTrackedFailure(MAX31865Error error) const;
+    void recordFaultObservation(const MAX31865FaultStatus &fault);
+    MAX31865DriverState derivedDriverState() const;
+    void invalidateObservedState();
+    void resetLocalState();
+
+    MAX31865Transport _transport;
+    MAX31865DeviceConfig _desiredConfig;
+    MAX31865RtdConfig _rtdConfig;
+    uint8_t _observedRegisters[max31865_cmd::NUM_REGISTERS];
+    uint8_t _observedValidMask;
+    bool _configurationKnown;
+    bool _continuous;
+    bool _oneShotArmed;
+    bool _oneShotCommitPending;
+    bool _oneShotCommitUncertain;
+    bool _freshResultArmed;
+    bool _readyLatched;
+    bool _timedReadinessHalted;
+    bool _chipSelectUncertain;
+    uint32_t _conversionStartMs;
+    uint32_t _nextReadyMs;
+    uint32_t _defaultOperationTimeoutMs;
     MAX31865State _state;
-    MAX31865DriverState _driverState;
-    MAX31865Error _lastError;
+    MAX31865Status _lastOperation;
     uint8_t _offlineThreshold;
     uint8_t _consecutiveFailures;
-    uint32_t _totalFailures;
-    uint32_t _totalSuccess;
+    uint32_t _sampleCounter;
+
+    uint32_t _trackedSuccessCount;
+    uint32_t _trackedFailureCount;
+    uint32_t _sampleFrameAttemptCount;
+    uint32_t _sampleFrameSuccessCount;
+    uint32_t _sampleFrameFailureCount;
+    uint32_t _noDataCount;
+    uint32_t _droppedSampleCount;
+    uint32_t _overrunCount;
+    uint32_t _busLockTimeoutCount;
+    uint32_t _busLockFailureCount;
+    uint32_t _spiTransferFailureCount;
+    uint32_t _chipSelectFailureCount;
+    uint32_t _gpioFailureCount;
+    uint32_t _drdyTimeoutCount;
+    uint32_t _operationTimeoutCount;
+    uint32_t _faultObservationCount;
+    uint32_t _thresholdFaultObservationCount;
+    uint32_t _referenceFaultObservationCount;
+    uint32_t _voltageFaultObservationCount;
+
+    bool _hasLastFaultStatus;
+    uint8_t _lastFaultStatus;
+    bool _hasLastOkMs;
+    bool _hasLastErrorMs;
+    bool _hasLastSampleTimestamp;
     uint32_t _lastOkMs;
     uint32_t _lastErrorMs;
-
-    float _referenceResistorOhms;
-    float _rtdNominalOhms;
-    MAX31865RtdCoefficients _coefficients;
-    uint32_t _inputFilterTimeConstantUs;
-    MAX31865WireMode _wireMode;
-    MAX31865Filter _filter;
-    bool _biasEnabled;
-    bool _autoConvert;
-    bool _clearFaultsBeforeOneShot;
-    bool _disableBiasAfterOneShot;
-
-    bool _conversionStarted;
-    bool _autoFirstConversionPending;
-    bool _sampleAvailable;
-    uint32_t _conversionStartMs;
-    uint32_t _sampleCounter;
-    uint32_t _lastSampleTimestampMs;
-    MAX31865Sample _lastSample;
-    bool _lastSampleValid;
-
-    uint32_t _totalReadCount;
-    uint32_t _keptSampleCount;
-    size_t _droppedCount;
-    size_t _overrunCount;
-    size_t _queueHighWater;
-    uint32_t _spiErrorCount;
-    uint32_t _drdyTimeoutCount;
-    uint32_t _spiLockTimeoutCount;
-    uint32_t _referenceAlarmCount;
-    uint8_t _lastFaultStatus;
+    uint32_t _lastSampleTimestampUs;
 };
-
-/** @} */
-
-#endif  // MAX31865_H_

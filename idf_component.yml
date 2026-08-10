@@ -1,0 +1,32 @@
+version: "1.0.0"
+description: Framework-neutral MAX31865 RTD-to-digital converter core with application-supplied transport callbacks
+url: https://github.com/janhavelka/MAX31865
+license: MIT
+targets:
+  - esp32s2
+  - esp32s3
+dependencies:
+  idf: ">=5.3"
+files:
+  exclude:
+    - ".git*"
+    - ".github/**/*"
+    - ".pio/**/*"
+    - ".vscode/**/*"
+    - "*.o"
+    - "*.obj"
+    - "*.pdf"
+    - "*.tar.gz"
+    - "AGENTS.md"
+    - "CONTRIBUTING.md"
+    - "Doxyfile"
+    - "SECURITY.md"
+    - "build/**/*"
+    - "cmake-build-*/*"
+    - "compile_commands.json"
+    - "docs/**/*"
+    - "hil_logs/**/*"
+    - "platformio.ini"
+    - "scripts/**/*"
+    - "test/**/*"
+    - "tools/**/*"

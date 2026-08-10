@@ -1,122 +1,161 @@
 /**
  * @file CommandTable.h
- * @brief MAX31865 register constants and low-level protocol values.
+ * @brief Authoritative MAX31865 register, field, protocol, and timing constants.
  */
 
 #pragma once
 
+#include <stddef.h>
 #include <stdint.h>
 
 /**
- * @brief Low-level MAX31865 register, bit-mask, and timing constants.
+ * @brief Low-level values from MAX31865 data sheet Rev. 3.
  *
- * These constants are public so diagnostics and bringup tools can print and
- * edit registers without duplicating magic numbers. Application code normally
- * uses the MAX31865 class methods instead.
+ * Application code normally uses the typed driver API. These constants remain
+ * public for diagnostics, independent protocol tests, and register displays.
  */
-namespace max31865_cmd {
-
-/// Mask applied to the address byte for register reads.
-static constexpr uint8_t READ_MASK = 0x7F;
-/// Bit added to the address byte for register writes.
-static constexpr uint8_t WRITE_BIT = 0x80;
-/// Datasheet maximum SPI clock.
+namespace max31865_cmd
+{
+/** Address-byte mask for a register read. */
+static constexpr uint8_t READ_MASK = 0x7FU;
+/** Address-byte bit selecting a register write. */
+static constexpr uint8_t WRITE_BIT = 0x80U;
+/** Highest supported serial-clock frequency. */
 static constexpr uint32_t SPI_MAX_HZ = 5000000UL;
-/// Recommended minimum reference resistor from the operating-condition table.
-static constexpr float REFERENCE_RESISTOR_MIN_OHMS = 350.0f;
-/// Recommended maximum reference resistor from the operating-condition table.
-static constexpr float REFERENCE_RESISTOR_MAX_OHMS = 10000.0f;
+/** Number of documented byte registers. */
+static constexpr size_t NUM_REGISTERS = 8U;
+/** Longest address-plus-register-range SPI transfer. */
+static constexpr size_t MAX_FRAME_BYTES = NUM_REGISTERS + 1U;
 
-/// Configuration register address.
-static constexpr uint8_t REG_CONFIG = 0x00;
-/// RTD data MSB register address.
-static constexpr uint8_t REG_RTD_MSB = 0x01;
-/// RTD data LSB register address.
-static constexpr uint8_t REG_RTD_LSB = 0x02;
-/// High fault threshold MSB register address.
-static constexpr uint8_t REG_HIGH_FAULT_MSB = 0x03;
-/// High fault threshold LSB register address.
-static constexpr uint8_t REG_HIGH_FAULT_LSB = 0x04;
-/// Low fault threshold MSB register address.
-static constexpr uint8_t REG_LOW_FAULT_MSB = 0x05;
-/// Low fault threshold LSB register address.
-static constexpr uint8_t REG_LOW_FAULT_LSB = 0x06;
-/// Fault status register address.
-static constexpr uint8_t REG_FAULT_STATUS = 0x07;
-/// Last documented register address.
+/** Configuration register address. */
+static constexpr uint8_t REG_CONFIG = 0x00U;
+/** RTD resistance data MSB address. */
+static constexpr uint8_t REG_RTD_MSB = 0x01U;
+/** RTD resistance data LSB/fault address. */
+static constexpr uint8_t REG_RTD_LSB = 0x02U;
+/** High fault-threshold MSB address. */
+static constexpr uint8_t REG_HIGH_FAULT_MSB = 0x03U;
+/** High fault-threshold LSB address. */
+static constexpr uint8_t REG_HIGH_FAULT_LSB = 0x04U;
+/** Low fault-threshold MSB address. */
+static constexpr uint8_t REG_LOW_FAULT_MSB = 0x05U;
+/** Low fault-threshold LSB address. */
+static constexpr uint8_t REG_LOW_FAULT_LSB = 0x06U;
+/** Latched fault-status register address. */
+static constexpr uint8_t REG_FAULT_STATUS = 0x07U;
+/** Last documented register address. */
 static constexpr uint8_t REG_LAST = REG_FAULT_STATUS;
 
-/// CONFIG register power-on value.
-static constexpr uint8_t CONFIG_RESET = 0x00;
-/// High fault threshold MSB power-on value.
-static constexpr uint8_t HIGH_FAULT_MSB_RESET = 0xFF;
-/// High fault threshold LSB power-on value.
-static constexpr uint8_t HIGH_FAULT_LSB_RESET = 0xFF;
-/// Low fault threshold MSB power-on value.
-static constexpr uint8_t LOW_FAULT_MSB_RESET = 0x00;
-/// Low fault threshold LSB power-on value.
-static constexpr uint8_t LOW_FAULT_LSB_RESET = 0x00;
+/** Configuration-register power-on value. */
+static constexpr uint8_t CONFIG_RESET = 0x00U;
+/** RTD MSB power-on value. */
+static constexpr uint8_t RTD_MSB_RESET = 0x00U;
+/** RTD LSB power-on value. */
+static constexpr uint8_t RTD_LSB_RESET = 0x00U;
+/** High fault-threshold MSB power-on value. */
+static constexpr uint8_t HIGH_FAULT_MSB_RESET = 0xFFU;
+/** High fault-threshold LSB power-on value. */
+static constexpr uint8_t HIGH_FAULT_LSB_RESET = 0xFFU;
+/** Low fault-threshold MSB power-on value. */
+static constexpr uint8_t LOW_FAULT_MSB_RESET = 0x00U;
+/** Low fault-threshold LSB power-on value. */
+static constexpr uint8_t LOW_FAULT_LSB_RESET = 0x00U;
+/** Fault-status power-on value. */
+static constexpr uint8_t FAULT_STATUS_RESET = 0x00U;
 
-/// CONFIG bit: enable VBIAS.
-static constexpr uint8_t CONFIG_BIAS = 0x80;
-/// CONFIG bit: enable automatic conversion.
-static constexpr uint8_t CONFIG_AUTO = 0x40;
-/// CONFIG bit: start one-shot conversion.
-static constexpr uint8_t CONFIG_ONE_SHOT = 0x20;
-/// CONFIG bit: enable 3-wire RTD compensation.
-static constexpr uint8_t CONFIG_3WIRE = 0x10;
-/// CONFIG mask: fault-detection cycle field.
-static constexpr uint8_t CONFIG_FAULT_CYCLE_MASK = 0x0C;
-/// CONFIG fault-cycle field: no active cycle.
-static constexpr uint8_t CONFIG_FAULT_CYCLE_NONE = 0x00;
-/// CONFIG fault-cycle field: automatic fault detection.
-static constexpr uint8_t CONFIG_FAULT_CYCLE_AUTO = 0x04;
-/// CONFIG fault-cycle field: manual fault detection step 1.
-static constexpr uint8_t CONFIG_FAULT_CYCLE_MANUAL_1 = 0x08;
-/// CONFIG fault-cycle field: manual fault detection step 2.
-static constexpr uint8_t CONFIG_FAULT_CYCLE_MANUAL_2 = 0x0C;
-/// CONFIG bit: clear latched fault status.
-static constexpr uint8_t CONFIG_FAULT_CLEAR = 0x02;
-/// CONFIG bit: select 50 Hz notch filter when set; 60 Hz when clear.
-static constexpr uint8_t CONFIG_FILTER_50HZ = 0x01;
+/** CONFIG D7: enable VBIAS. */
+static constexpr uint8_t CONFIG_BIAS = 0x80U;
+/** CONFIG D6: automatic continuous conversion. */
+static constexpr uint8_t CONFIG_AUTO = 0x40U;
+/** CONFIG D5: trigger a one-shot conversion; self-clearing. */
+static constexpr uint8_t CONFIG_ONE_SHOT = 0x20U;
+/** CONFIG D4: enable three-wire compensation. */
+static constexpr uint8_t CONFIG_3WIRE = 0x10U;
+/** CONFIG D3:D2: fault-detection-cycle field. */
+static constexpr uint8_t CONFIG_FAULT_CYCLE_MASK = 0x0CU;
+/** CONFIG D3:D2: fault detection finished/no action. */
+static constexpr uint8_t CONFIG_FAULT_CYCLE_NONE = 0x00U;
+/** CONFIG D3:D2: automatic fault-detection cycle. */
+static constexpr uint8_t CONFIG_FAULT_CYCLE_AUTO = 0x04U;
+/** CONFIG D3:D2: manual fault-detection cycle 1. */
+static constexpr uint8_t CONFIG_FAULT_CYCLE_MANUAL_1 = 0x08U;
+/** CONFIG D3:D2: manual fault-detection cycle 2. */
+static constexpr uint8_t CONFIG_FAULT_CYCLE_MANUAL_2 = 0x0CU;
+/** CONFIG D1: clear latched fault status; self-clearing. */
+static constexpr uint8_t CONFIG_FAULT_CLEAR = 0x02U;
+/** CONFIG D0: select the 50 Hz notch; clear selects 60 Hz. */
+static constexpr uint8_t CONFIG_FILTER_50HZ = 0x01U;
+/** Persistent, readback-stable CONFIG fields. */
+static constexpr uint8_t CONFIG_PERSISTENT_MASK =
+    CONFIG_BIAS | CONFIG_AUTO | CONFIG_3WIRE | CONFIG_FILTER_50HZ;
+/** Self-clearing or transient CONFIG command fields. */
+static constexpr uint8_t CONFIG_COMMAND_MASK =
+    CONFIG_ONE_SHOT | CONFIG_FAULT_CYCLE_MASK | CONFIG_FAULT_CLEAR;
 
-/// Maximum 15-bit RTD ADC code.
-static constexpr uint16_t ADC_CODE_MAX = 0x7FFF;
-/// RTD ADC full-scale denominator.
+/** Highest valid 15-bit RTD/threshold code. */
+static constexpr uint16_t ADC_CODE_MAX = 0x7FFFU;
+/** Denominator used by the RTD/reference resistance ratio. */
 static constexpr uint32_t ADC_FULL_SCALE = 32768UL;
-/// Raw RTD register bit that indicates a fault.
-static constexpr uint16_t RTD_FAULT_BIT = 0x0001;
+/** RTD data-register D0 fault indicator. */
+static constexpr uint16_t RTD_FAULT_BIT = 0x0001U;
+/** Threshold-register LSB bits with defined readback behavior. */
+static constexpr uint8_t THRESHOLD_LSB_DEFINED_MASK = 0xFEU;
 
-/// Fault status bit: high threshold.
-static constexpr uint8_t FAULT_HIGH_THRESHOLD = 0x80;
-/// Fault status bit: low threshold.
-static constexpr uint8_t FAULT_LOW_THRESHOLD = 0x40;
-/// Fault status bit: REFIN- high.
-static constexpr uint8_t FAULT_REFIN_HIGH = 0x20;
-/// Fault status bit: REFIN- low.
-static constexpr uint8_t FAULT_REFIN_LOW = 0x10;
-/// Fault status bit: RTDIN- low.
-static constexpr uint8_t FAULT_RTDIN_LOW = 0x08;
-/// Fault status bit: overvoltage/undervoltage.
-static constexpr uint8_t FAULT_OVER_UNDER_VOLTAGE = 0x04;
-/// Mask of all documented fault status bits.
-static constexpr uint8_t FAULT_DEFINED_MASK = 0xFC;
+/** FAULT_STATUS D7: RTD high-threshold fault. */
+static constexpr uint8_t FAULT_HIGH_THRESHOLD = 0x80U;
+/** FAULT_STATUS D6: RTD low-threshold fault. */
+static constexpr uint8_t FAULT_LOW_THRESHOLD = 0x40U;
+/** FAULT_STATUS D5: REFIN- greater than 0.85 x VBIAS. */
+static constexpr uint8_t FAULT_REFIN_HIGH = 0x20U;
+/** FAULT_STATUS D4: REFIN- low while FORCE- is open. */
+static constexpr uint8_t FAULT_REFIN_LOW = 0x10U;
+/** FAULT_STATUS D3: RTDIN- low while FORCE- is open. */
+static constexpr uint8_t FAULT_RTDIN_LOW = 0x08U;
+/** FAULT_STATUS D2: protected-input over/undervoltage. */
+static constexpr uint8_t FAULT_OVER_UNDER_VOLTAGE = 0x04U;
+/** Mask of every documented fault-status bit; D1:D0 are don't-care. */
+static constexpr uint8_t FAULT_DEFINED_MASK = 0xFCU;
 
-/// Maximum 60 Hz one-shot conversion time, milliseconds.
-static constexpr uint32_t SINGLE_CONVERSION_60HZ_MS = 55;
-/// Maximum 50 Hz one-shot conversion time, milliseconds.
-static constexpr uint32_t SINGLE_CONVERSION_50HZ_MS = 66;
-/// Continuous conversion cadence at 60 Hz filter, milliseconds.
-static constexpr uint32_t CONTINUOUS_CONVERSION_60HZ_MS = 18;
-/// Continuous conversion cadence at 50 Hz filter, milliseconds.
-static constexpr uint32_t CONTINUOUS_CONVERSION_50HZ_MS = 21;
-/// Maximum automatic fault-detection cycle time, microseconds.
-static constexpr uint32_t AUTO_FAULT_DETECTION_MAX_US = 600;
-/// Conservative delay used between manual fault-cycle steps, microseconds.
-static constexpr uint32_t MANUAL_FAULT_STEP_SETTLE_US = 100;
-/// Extra fixed VBIAS settle delay after input-filter settling, microseconds.
-static constexpr uint32_t BIAS_SETTLE_EXTRA_US = 1000;
-/// Datasheet input-filter settling multiplier after enabling VBIAS.
-static constexpr float BIAS_SETTLE_TIME_CONSTANTS = 10.5f;
+/** Minimum recommended external reference resistance. */
+static constexpr float REFERENCE_RESISTOR_MIN_OHMS = 350.0F;
+/** Maximum recommended external reference resistance. */
+static constexpr float REFERENCE_RESISTOR_MAX_OHMS = 10000.0F;
+/** Minimum platinum RTD nominal resistance stated by the data sheet. */
+static constexpr float RTD_NOMINAL_MIN_OHMS = 100.0F;
+/** Maximum platinum RTD nominal resistance stated by the data sheet. */
+static constexpr float RTD_NOMINAL_MAX_OHMS = 1000.0F;
 
-}  // namespace max31865_cmd
+/** Maximum one-shot conversion time with the 60 Hz notch. */
+static constexpr uint32_t SINGLE_CONVERSION_60HZ_MS = 55U;
+/** Maximum one-shot conversion time with the 50 Hz notch. */
+static constexpr uint32_t SINGLE_CONVERSION_50HZ_MS = 66U;
+/** Maximum continuous conversion period with the 60 Hz notch. */
+static constexpr uint32_t CONTINUOUS_CONVERSION_60HZ_MS = 18U;
+/** Maximum continuous conversion period with the 50 Hz notch. */
+static constexpr uint32_t CONTINUOUS_CONVERSION_50HZ_MS = 21U;
+/** Maximum automatic fault-detection-cycle duration. */
+static constexpr uint32_t AUTO_FAULT_DETECTION_MAX_US = 600U;
+/** Duration of one documented internal manual-fault comparison phase. */
+static constexpr uint32_t MANUAL_FAULT_PHASE_US = 100U;
+/** Two internal phases before FORCE- is open after manual step 1. */
+static constexpr uint32_t MANUAL_FAULT_STEP1_TO_OPEN_US = 200U;
+/** Two internal comparison phases performed by manual step 2. */
+static constexpr uint32_t MANUAL_FAULT_STEP2_MAX_US = 200U;
+/** Automatic fault timing supports at most this external RC time constant. */
+static constexpr uint32_t AUTO_FAULT_MAX_RC_US = 100U;
+/** External-settling multiplier required between manual fault phases. */
+static constexpr uint32_t MANUAL_FAULT_SETTLE_MULTIPLIER = 5U;
+/** Additional one-shot settling delay after 10.5 external RC constants. */
+static constexpr uint32_t BIAS_SETTLE_EXTRA_US = 1000U;
+/** Numerator for the exact 10.5 RC-time-constant settling multiplier. */
+static constexpr uint32_t BIAS_SETTLE_MULTIPLIER_NUMERATOR = 21U;
+/** Denominator for the exact 10.5 RC-time-constant settling multiplier. */
+static constexpr uint32_t BIAS_SETTLE_MULTIPLIER_DENOMINATOR = 2U;
+
+/** Conservative CS-to-SCLK setup delay (data-sheet minimum 400 ns). */
+static constexpr uint32_t CS_SETUP_DELAY_US = 1U;
+/** Conservative final-SCLK-to-CS hold delay (data-sheet minimum 100 ns). */
+static constexpr uint32_t CS_HOLD_DELAY_US = 1U;
+/** Conservative CS-high inactive interval (data-sheet minimum 400 ns). */
+static constexpr uint32_t CS_INACTIVE_DELAY_US = 1U;
+} // namespace max31865_cmd

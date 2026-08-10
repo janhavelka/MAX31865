@@ -1,44 +1,28 @@
-# MAX31865 Documentation
+# MAX31865 documentation
 
-This directory contains hand-written project documentation, source PDFs,
-datasheet extraction notes, vendor reference material, and generated API
-output.
+## Integration guides
 
-## Guides
+- [API overview](api-overview.md)
+- [Architecture and ownership](ARCHITECTURE.md)
+- [Arduino integration](ARDUINO.md)
+- [Standalone diagnostic CLI](CLI.md)
+- [ESP-IDF callback integration](ESP_IDF.md)
+- [Hardware bringup](HARDWARE_BRINGUP.md)
+- [Data-sheet audit](DATASHEET_AUDIT.md)
+- [Testing](TESTING.md)
+- [Known limitations](KNOWN_LIMITATIONS.md)
+- [Repository contract](repository-contract.md)
 
-- [API overview](api-overview.md) - public API shape, wiring, diagnostics,
-  conversion helpers, threshold configuration, and fault handling.
-- [Repository contract](repository-contract.md) - repository layout, API/CLI
-  requirements, validation gates, and portability rules.
-- [ESP-IDF porting notes](esp-idf-porting.md) - planned migration path from
-  Arduino/PlatformIO to an ESP-IDF component.
-- [Vendor reference material](vendor-reference-code/README.md) - copied
-  Maxim/Analog Devices reference files used for comparison.
-- [Extracted source notes](extracted-md/00_document_inventory.md) - compact
-  curated datasheet and application-note notes for later driver work.
+The `extracted-md/` directory contains curated source notes. The
+`pdf-extracted-md/` directory contains raw extraction output and is not a
+normative API guide. Local source copies are retained under `source-pdfs/`, and
+`vendor-reference-code/` is comparison material rather than production code.
 
-## Directory Map
+The device authority is the official Analog Devices
+[product page](https://www.analog.com/en/products/max31865.html) and
+[Rev. 3 data sheet](https://www.analog.com/media/en/technical-documentation/data-sheets/MAX31865.pdf).
+If a guide conflicts with the current data sheet, the data sheet and a reviewed
+code/test update take precedence.
 
-- `source-pdfs/datasheets/` - primary device datasheets.
-- `source-pdfs/application-notes/` - supplementary Maxim/Analog Devices
-  application notes and articles.
-- `extracted-md/` - compact curated notes synthesized from the PDFs.
-- `pdf-extracted-md/` - raw generated Markdown extracted from the PDFs.
-- `vendor-reference-code/` - copied vendor-style reference files.
-- `generated/` - Doxygen output.
-
-## Generated Output
-
-`generated/` is local Doxygen output from the root `Doxyfile` and is ignored by
-Git. Do not edit generated files by hand; update the source headers or Markdown
-pages and regenerate.
-
-## Naming Rules
-
-- Use lowercase, hyphen-separated Markdown filenames.
-- Name each guide by its job, not by an internal acronym.
-- Keep source PDFs under `source-pdfs/`.
-- Keep compact notes under `extracted-md/` and raw PDF extracts under
-  `pdf-extracted-md/`.
-- Keep vendor reference material under `vendor-reference-code/`.
-- Keep generated documentation under `generated/`.
+Doxygen output is generated locally under `docs/doxygen/` and must not be
+edited by hand.

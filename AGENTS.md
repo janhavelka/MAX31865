@@ -1,169 +1,188 @@
 # AGENTS.md - MAX31865 Production Embedded Guidelines
 
-## Role and Target
-You are a professional embedded software engineer building a production-grade MAX31865 RTD-to-digital converter library.
+## PlatformIO
 
-- Target: ESP32-S2 / ESP32-S3, Arduino framework, PlatformIO.
-- Goals: deterministic behavior, long-term stability, clean API contracts, portability, and no surprises in the field.
-- These rules are binding.
+Before editing, fetch remotes and fast-forward the newest intended working
+branch to its upstream. Stop and report dirty, divergent, or conflicted state;
+never overwrite work to force a sync.
 
----
+On Windows, use `.\scripts\pio.cmd <arguments>`; it selects the current user's
+VS Code-managed installation. Never install another PlatformIO Core. If the
+wrapper cannot find it, stop and report the missing installation.
 
-## Repository Model (Single Library)
+## Role and target
 
-```
-include/                  - Public API headers only (Doxygen)
-  MAX31865/
-    MAX31865.h            - Main Arduino C++ driver API
-    Config.h              - Configuration structs/enums and defaults
-    Status.h              - Error/status, sample, and health types
-    CommandTable.h        - Register addresses, bit masks, protocol constants
-    Version.h             - Auto-generated (do not edit)
-src/                      - Implementation (.cpp)
+Build a production-grade MAX31865 RTD-to-digital converter library.
+
+- Targets: ESP32-S2/ESP32-S3 Arduino examples through exact-pinned PlatformIO,
+  and ESP-IDF consumers through a framework-neutral core component with
+  application-supplied callbacks.
+- Model: deterministic managed synchronous driver, explicit status and health,
+  application-owned scheduling, serialization, and recovery policy.
+- Goals: stable API contracts, portability, long-term reliability, and no
+  hidden ownership or timing surprises.
+
+These rules are binding.
+
+## Repository model
+
+```text
+include/MAX31865/          Public API headers only
+  MAX31865.h               Main synchronous driver API
+  Config.h                 Device/RTD/begin configuration and defaults
+  Status.h                 Error, status, sample, fault, and health types
+  Transport.h              Framework-neutral SPI/GPIO/timing callbacks
+  ArduinoBackend.h         Guarded Arduino adapter
+  Protocol.h               Framework-neutral protocol helpers
+  CommandTable.h           Audited register/bit/timing constants
+  Version.h                Generated; never edit manually
+src/
+  MAX31865.cpp             Managed driver and sequencing
+  MAX31865_Protocol.cpp    Protocol helper implementation
+  platform/arduino/        Arduino-only SPI/GPIO/timing backend
 examples/
-  01_*/
-  02_*/
-  common/                 - Example-only helpers and CLI glue
-test/                     - Native/unit tests
-platformio.ini
-library.json
-README.md
-CHANGELOG.md
-AGENTS.md
+  01_basic_bringup/
+  02_continuous_sampling/
+  03_one_shot/
+  04_fault_diagnostics/
+  05_rtd_configuration/
+  06_diagnostic_cli/       Self-contained diagnostic console
+  common/                  Example-only helpers for examples 01-05
+test/                      Native model and strict host tests
+tools/                     Static, package, and native validation gates
+CMakeLists.txt             Core-only ESP-IDF component registration
+idf_component.yml          Core-only ESP-IDF component metadata
 ```
 
-Rules:
-- `examples/common/` is NOT part of the library. It simulates project glue and keeps examples self-contained.
-- No board-specific pin defaults in library code; wiring must come from `MAX31865BeginConfig` or explicit begin arguments.
-- Public headers stay under `include/`; do not expose private implementation headers from `src/`.
-- Keep register/protocol constants in `MAX31865/CommandTable.h`.
-- Examples demonstrate usage and may use `examples/common/BoardConfig.h`.
+- `examples/common/` is not library code.
+- Public headers remain under `include/MAX31865/`; private code remains under
+  `src/`.
+- No board pin defaults, global bus, task, logging, retry, or safety policy in
+  library code.
+- Wiring and SPI ownership live in the application transport or guarded
+  Arduino adapter.
 - Keep the layout boring and predictable.
 
----
+## Core engineering rules
 
-## Core Engineering Rules (Mandatory)
-
-- Deterministic: no unbounded loops/waits; all waits use deadlines or bounded timeouts.
-- Lifecycle is explicit: `begin(...)`, `tick(uint32_t nowMs)`, `stop()`, and `end()`.
-- Any blocking operation must document its maximum wait and timeout behavior.
-- No heap allocation in steady state.
+- No unbounded wait or retry. Every blocking helper has one finite deadline.
+- Managed synchronous lifecycle: `begin(config)`, configuration/register APIs,
+  `startContinuous()`, `triggerSingleConversion()`, `stop()`, `poll()`,
+  `readSample()`, `readSingle(timeoutMs)`, `recover()`, and `end()`.
+- `tick(nowMs)` performs only zero-I/O elapsed-time bookkeeping.
+- No driver-owned task, ISR bridge, ring buffer, scheduler, hidden RTOS
+  dependency, or steady-state heap allocation.
 - No logging in library code; examples may log.
-- No board-specific assumptions in library code.
-- No macros for new constants unless required for compatibility or conditional compile. Prefer `static constexpr`.
+- Public/core headers and core sources must not include Arduino, ESP-IDF, or
+  FreeRTOS headers.
+- Public APIs are not ISR-safe and instances are not internally thread-safe.
+  Applications serialize each instance and every shared SPI bus.
+- Fallible public APIs return `MAX31865Status`; do not add bool/error-side-
+  channel compatibility APIs.
+- Validation, precondition, `NoData`, and ordinary not-ready results are not
+  transport/device health failures.
 
----
+## SPI ownership and transport
 
-## SPI Ownership and Transport
+- The core never owns or configures an SPI host.
+- The driver owns MAX31865 chip framing, CS timing, register images,
+  conversion/fault sequencing, sample freshness, and decoded device faults.
+- SPI transfer, CS, optional DRDY, clocks, sleep, microsecond delay, and optional
+  finite bus locking live behind `MAX31865Transport`.
+- The callback table is copied; `user` and all reachable resources are borrowed
+  and must outlive the binding.
+- Bus lock callbacks are either both null or both present and receive the
+  remaining whole-operation budget. They must use the same arbiter as every
+  other client of that SPI host.
+- SPI/CS/GPIO failures, lock timeouts, conversion timeouts, verification
+  failures, and device faults update status and health through common paths.
+- Native Arduino/ESP-IDF/FreeRTOS error details must be mapped to
+  `MAX31865Error`, never exposed through the core API.
 
-- The library MUST NOT hard-code a global SPI bus. The caller supplies `SPIClass*` / `SPIClass&`.
-- The library may own MAX31865 chip-level framing, `/CS`, optional `/DRDY`, and register transactions after `begin()`.
-- The library must not choose board pins internally; pins come from `MAX31865Pins` or explicit begin arguments.
-- SPI bus locking must be bounded by `MAX31865_SPI_LOCK_TIMEOUT_MS` or caller-configured values.
-- SPI transfer failures, lock timeouts, conversion timeouts, and decoded MAX31865 faults must update `lastError()` / `lastOperationStatus()` and health counters consistently.
-- Do not leak raw ESP-IDF/FreeRTOS/SPI failure details through the public API without mapping them to `MAX31865Error` or `MAX31865Status`.
+## Framework boundary
 
----
+- Arduino types are allowed only in `ArduinoBackend.h`,
+  `src/platform/arduino/`, and Arduino examples.
+- The repository supplies no native ESP-IDF backend or example. ESP-IDF
+  applications use the core-only component and implement application-owned
+  callbacks for SPI, CS/DRDY, time, sleep, delay, and bus arbitration.
+- `CMakeLists.txt` registers only `MAX31865.cpp` and
+  `MAX31865_Protocol.cpp`; it must not require peripheral or RTOS components.
+- Repository examples use Arduino, advance cooperative work from `loop()`, and
+  build through exact-pinned PlatformIO environments.
 
-## Status / Error Handling (Mandatory)
-
-Existing compact Arduino APIs may return `bool`, but failure must never be silent:
+## Status and health
 
 ```cpp
-typedef struct MAX31865Status {
+struct MAX31865Status {
     MAX31865Error code;
-    const char* msg;   // static string only
+    const char* msg; // static storage only
     int32_t detail;
-} MAX31865Status;
-```
-
-- New fallible APIs should return `MAX31865Status` when practical.
-- Existing `bool` APIs must set `lastError()` / `lastOperationStatus()` on every failure.
-- Do not use exceptions.
-- Validation/precondition failures must not be counted as transport failures.
-
----
-
-## MAX31865 Driver Requirements
-
-- Support caller-supplied SPI clock and pins.
-- Support PT100/PT1000 and custom RTD nominal/reference resistor values.
-- Support 2-wire, 3-wire, and 4-wire RTD modes.
-- Support 50 Hz and 60 Hz notch-filter selection.
-- Support VBIAS control, one-shot conversion, continuous conversion, and stop behavior.
-- Support conversion-ready detection from DRDY when wired or from bounded elapsed-time polling when DRDY is absent.
-- Support raw 15-bit RTD ADC decoding and fault-bit handling.
-- Support resistance and temperature conversion using IEC 60751 Callendar-Van Dusen coefficients, with custom coefficients when configured.
-- Support high/low fault thresholds in raw code, ohms, and Celsius where exposed by the API.
-- Support latched fault clearing and automatic/manual fault-detection cycles.
-- Decode all documented fault bits: high threshold, low threshold, REFIN high/low, RTDIN low, and over/under-voltage.
-- Provide register dump/read/write helpers for diagnostics without encouraging application code to bypass the typed API.
-- Track sample counters, stale/not-ready behavior, dropped reads, overruns, fault counts, and timeout counts.
-
----
-
-## Driver Architecture: Managed SPI Driver
-
-The driver follows a managed synchronous SPI model:
-
-- Public SPI operations are blocking and bounded.
-- `tick()` may be used to service conversion-ready state and the one-sample cache.
-- Health is tracked through common internal success/failure paths, not scattered ad hoc updates.
-- Recovery is manual via `recover()`; the application controls retry strategy.
-
-### Health State
-
-```cpp
-enum class MAX31865DriverState : uint8_t {
-    UNINIT,
-    READY,
-    DEGRADED,
-    OFFLINE
 };
 ```
 
-State transitions:
-- `begin()` success -> READY
-- Any tracked SPI/device failure in READY -> DEGRADED
-- Success in DEGRADED/OFFLINE -> READY
-- Failures reach `offlineThreshold()` -> OFFLINE
-- `end()` -> UNINIT
+- No exceptions and no silent failure.
+- `probe()` performs raw read-only register consistency checks and preserves
+  health counters and last-operation status.
+- `recover()` is explicit, tracked, and never restarts acquisition.
+- Health is `UNINIT`, `READY`, `DEGRADED`, or `OFFLINE`. A tracked success
+  clears the failure streak; tracked failures reach
+  `MAX31865Health::offlineThreshold` before threshold-based `OFFLINE`.
+- A lifecycle `Fault` is immediately `OFFLINE` because hardware/configuration
+  authority is lost.
+- Lifetime counters saturate intentionally.
 
-### Health Tracking Rules
+## MAX31865 requirements
 
-- `probe()` uses raw configuration-register checks and does not update health counters.
-- `recover()` uses tracked operations and updates health.
-- A simple "conversion not ready yet" result is not a transport failure.
-- Do not count invalid arguments, invalid configuration, or invalid state as transport failures.
-- Reset consecutive failures on tracked success.
-- Keep lifetime success/failure counters saturating or wrapping intentionally; do not leave overflow behavior accidental.
+- Support measured/custom RREF and RTD R0, PT100/PT1000 profiles, and custom
+  finite monotonic Callendar-Van Dusen coefficients/domains.
+- Support 2-/3-/4-wire modes and 50/60 Hz filters.
+- Support VBIAS, bounded one-shot and continuous conversions, authoritative
+  stop semantics, wired DRDY, and bounded elapsed-time readiness without DRDY.
+- Decode the 15-bit RTD code and every documented fault bit.
+- Support raw/ohm/Celsius thresholds, explicit latch clear, and fresh automatic
+  and correctly timed manual fault cycles.
+- Keep settings reads acquisition-neutral; document that RTD register reads
+  and full dumps acknowledge DRDY.
+- Provide typed diagnostic register access without encouraging application
+  bypass of managed configuration APIs.
+- Track sample/frame/no-data/drop/overrun, transport, timeout, and fault
+  observations with explicit validity.
 
----
+## Evidence honesty
 
-## Versioning and Releases
+- Never claim hardware validation without dated repository evidence or
+  user-supplied logs.
+- Distinguish native tests, target compilation, static ESP-IDF component
+  readiness, package-consumer checks, and actual board/HIL runs.
+- Examples and the CLI are diagnostics, not machine-safety implementations.
+- Calibration persistence, filtering, units, limits, retries, alarms, motion
+  interlocks, and actuator policy belong above this library.
 
-Single source of truth: `library.json`. `Version.h` is auto-generated and must never be edited manually.
+## Versioning and releases
 
-SemVer:
-- MAJOR: breaking API/config/enum changes.
-- MINOR: new backward-compatible features or error codes.
-- PATCH: bug fixes, refactors, docs.
+`library.json` is the version source of truth; `Version.h` is generated.
+
+- MAJOR: breaking API/configuration/enum changes.
+- MINOR: backward-compatible features or error codes.
+- PATCH: fixes, refactors, and documentation.
 
 Release steps:
-1. Update `library.json`.
-2. Regenerate `Version.h`.
-3. Update `CHANGELOG.md` using Added/Changed/Fixed/Removed.
-4. Update `README.md` and examples if API or behavior changed.
-5. Run tests and ESP32-S2/S3 builds.
-6. Commit and tag: `Release vX.Y.Z`.
 
----
+1. Update `library.json` and regenerate `Version.h`.
+2. Keep prospective work under `CHANGELOG.md` `[Unreleased]`.
+3. Update README, Doxygen, guides, examples, tests, and package manifest with
+   behavior changes.
+4. Run strict native/static/sanitizer/package/Doxygen gates and every
+   ESP32-S2/S3 example build.
+5. Complete the required HIL matrix, retain dated evidence, and obtain explicit
+   acceptance of the hardware results.
+6. Only then create a dated changelog section, commit/tag a release, and publish
+   with explicit authorization.
 
-## Naming Conventions
+## Naming conventions
 
-- Member variables: `_camelCase`
-- Methods/functions: `camelCase`
-- Constants: `CAPS_CASE` for legacy macros, `static constexpr` names matching local namespace style for new constants
-- Enum values: preserve existing public enum style
-- Locals/params: `camelCase`
-- Config fields: `camelCase`
+- Members: `_camelCase`.
+- Methods, locals, parameters, and config fields: `camelCase`.
+- Preserve existing register-style constants and public enum mappings; prefer
+  `static constexpr` for new C++ constants.

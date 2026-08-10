@@ -1,155 +1,168 @@
-# API Overview
+# API overview
 
-## Wiring
+## Public headers
 
-- SPI: ESP32 SCK/MOSI/MISO to MAX31865 SCLK/SDI/SDO.
-- CS: required, active low. The driver owns CS framing.
-- DRDY: optional; pass `-1` when not wired. Without DRDY the driver uses
-  datasheet conversion timing.
-- RTD leads: select 2-wire, 3-wire, or 4-wire mode with `setWireMode()` or
-  `MAX31865BeginConfig::wireMode`.
-- Reference resistor: configure the board value with
-  `MAX31865BeginConfig::referenceResistorOhms`.
+- `MAX31865/MAX31865.h`: synchronous driver and complete public operations.
+- `MAX31865/Config.h`: device, RTD, threshold, begin, settings, and probe types.
+- `MAX31865/Status.h`: statuses, lifecycle, sample flags, faults, and health.
+- `MAX31865/Transport.h`: framework-neutral borrowed callback contract.
+- `MAX31865/ArduinoBackend.h`: guarded Arduino-only adapter.
+- `MAX31865/Protocol.h`: canonical frame codecs for diagnostics and tests.
+- `MAX31865/CommandTable.h`: audited register, bit, and timing constants.
+- `MAX31865/Version.h`: generated stable semantic-version constants.
 
-The MAX31865 uses SPI mode 1 (`CPOL=0`, `CPHA=1`). The driver wraps transfers
-in Arduino SPI transactions and serializes them with an internal ESP32 mutex.
-`setSpiLockTimeoutMs()` changes the lock timeout used by register and
-measurement operations.
+The core public path does not include Arduino, ESP-IDF, FreeRTOS, or SPI host
+types. `ArduinoBackend.h` is visible only for Arduino builds.
 
-## Initialization
+## Construction and lifecycle
 
-New code should prefer the typed begin configuration:
+`MAX31865` is noncopyable and nonmovable. Construction performs no callback.
+`begin(MAX31865BeginConfig)` copies a callback table and desired configuration,
+but borrows the transport context. The driver does not own or initialize the
+SPI host. `end()` and destruction are zero-I/O and do not attempt cleanup; call
+bounded `stop()` explicitly while the transport is still valid when normally-off
+hardware state is required.
+
+An optional `powerReadyDelayMs` is a single begin-only pre-protocol sleep. It
+runs before `defaultOperationTimeoutMs` starts, so total `begin()` wall time is
+bounded by the configured power-ready delay plus the protocol deadline.
+Every nonzero public operation timeout must be at most `INT32_MAX`
+milliseconds; this keeps all deadline comparisons unambiguous across unsigned
+millisecond-counter wraparound.
+
+An armed one-shot cannot be cancelled by a later CONFIG write. `stop()` waits
+for a proven result, discards freshness, and then proves the normally-off
+image. The ordinary bound is the remaining documented 55/66 ms horizon, but a
+protected-input D2 voltage condition halts ADC updates and can extend it. A
+readiness timeout or DeviceFault leaves the conversion armed; `readSingle()`,
+`stop()`, or explicit `recover()` can resolve it after the condition clears.
+
+Stable lifecycle values are `Uninitialized`, `Ready`, `Converting`, and
+`Fault`. Synchronous work does not expose transient states. `Fault` means device
+selection or observed configuration is uncertain; `recover(timeoutMs)` is the
+explicit tracked path that reapplies the stored desired image. The MAX31865 has
+no device-ID register, reset pin, or software-reset command.
+
+## Status and health
+
+Every fallible method returns:
 
 ```cpp
-MAX31865 rtd;
-
-MAX31865BeginConfig cfg{};
-cfg.spi = &SPI;
-cfg.pins = {12, 13, 11, 10, -1};
-cfg.spiHz = 1000000U;
-cfg.verifyProbe = true;
-cfg.referenceResistorOhms = 400.0f;
-cfg.rtdNominalOhms = 100.0f;
-cfg.inputFilterTimeConstantUs = 1000U;
-cfg.wireMode = MAX31865WireMode::FourWire;
-cfg.filter = MAX31865Filter::Hz60;
-
-if (!rtd.begin(cfg)) {
-  Serial.println(rtd.lastErrorName());
-}
+struct MAX31865Status {
+  MAX31865Error code;
+  const char* msg; // Static storage only.
+  int32_t detail;
+};
 ```
 
-`verifyProbe` runs a non-destructive writable-threshold readback test. The
-MAX31865 has no chip-ID register, so a robust probe must verify that writable
-register bits can be read, changed, and restored.
+Validation failures, `NoData`, and an ordinary high DRDY observation are not
+transport failures. One public operation records at most one tracked success
+or failure. `MAX31865Health` provides passive zero-I/O lifecycle and
+READY/DEGRADED/OFFLINE state, desired/observed validity, saturating counters,
+last-status/fault evidence, and explicitly valid timestamps.
 
-## Operating Model
+`probe(out)` reads CONFIG, both thresholds, and FAULT_STATUS without writing and
+without changing health accounting. It reports whether the writable image
+matches the driver's desired image; it cannot authenticate device identity.
 
-The library is not a mandatory application task. It offers three read models:
+## Configuration
 
-- `readSingle(sample, timeoutMs)`: blocking one-shot read with VBIAS settle,
-  conversion wait, fault-bit handling, and optional post-read bias shutdown.
-- `readIfReady(sample)`: status-returning nonblocking read that does not pollute
-  health counters when data is simply not ready.
-- `startContinuous()` plus `available()`/`readSample(sample)`: continuous
-  conversion with a one-sample cache.
+Use `max31865DefaultBeginConfig()` and replace every board-specific value:
 
-The first sample after enabling continuous conversion uses the longer
-single-conversion time. Later samples use the shorter continuous cadence for the
-selected filter. Configuration and raw register writes should be performed
-while continuous conversion is stopped; conflicting operations return `Busy`.
+- `transport`: complete borrowed callback table.
+- `initialDeviceConfig`: wire mode, 50/60 Hz notch, idle VBIAS, raw thresholds.
+- `rtd`: measured RREF, RTD R0, coefficients, fitted input RC, conversion domain.
+- `powerReadyDelayMs`: optional begin-only delay outside the protocol deadline.
+- `defaultOperationTimeoutMs`: deadline for no-timeout public methods.
+- `offlineThreshold`: nonzero passive-health failure streak threshold.
 
-## Diagnostics
+The default RTD is IEC 60751 PT100 with 400 ohm RREF and a -200 to +850 degree C
+domain. PT1000 typically uses a 4 kohm RREF. Custom positive R0 is supported;
+the configured curve must be finite, strictly increasing in its domain, and fit
+below the representable `32767/32768 * RREF` limit. The recommended RREF range
+validated by the driver is 350 ohm to 10 kohm.
 
-The driver exposes a lifecycle state machine:
+Typed configuration operations are Ready-only. A partial or ambiguous write
+cannot silently commit a new desired image: observed state becomes uncertain,
+the lifecycle enters `Fault`, and application policy explicitly chooses
+`recover()` or `end()`.
 
-- `Uninitialized`
-- `Ready`
-- `Configuring`
-- `Converting`
-- `Recovering`
-- `Fault`
+Only three-wire compensation has a device CONFIG bit. Two-wire and four-wire
+both encode that bit clear and differ primarily in physical routing; the driver
+retains the requested two/four-wire enum in its desired local image because a
+register read cannot distinguish them.
 
-Use these APIs for supervision and logs:
+## Sampling
 
-- `state()` and `max31865StateName()`
-- `driverState()`, `healthState()`, `isOnline()`, and
-  `max31865DriverStateName()`
-- `probe()` for no-health-side-effect bus checks
-- `recover()` for tracked config restore
-- `lastError()`, `lastErrorName()`, and `max31865ErrorName()`
-- `lastOperationStatus()` for status-style diagnostic reporting
-- `lastOkMs()`, `lastErrorMs()`, `consecutiveFailures()`,
-  `totalSuccess()`, and `totalFailures()`
-- `health()` and `clearHealthCounters()`
+`startContinuous(timeoutMs)` clears stale faults, enables VBIAS, waits the
+configured input-filter settling interval, reads RTD data to acknowledge a
+possibly stale DRDY indication, and starts continuous conversion. The first
+result uses the one-shot maximum; later periods use the continuous maximum.
 
-`MAX31865Health` reports lifecycle state, READY/DEGRADED/OFFLINE health state,
-last error, online flag, success/failure counters, conversion state,
-cached-sample depth, read/kept/drop/overrun counters, SPI errors, SPI lock
-timeouts, reference fault observations, conversion/fault-cycle timeouts, last
-fault status, and last sample age. CRC/PGA/task fields are retained at zero for
-shared sensor-dashboard compatibility.
+`tick(nowMs)` performs only elapsed-time readiness/overrun bookkeeping and no
+callback. Without DRDY it must be serviced at least once per signed modulo
+half-range (less than 2^31 ms, about 24.9 days). `poll(out)` checks readiness
+once and returns `NoData` without a transport-failure penalty when no fresh
+result exists. `readSingle()` waits for an already armed conversion; with
+`timeoutMs == 0` it performs exactly one readiness check, never sleeps, and
+returns `NoData` if the result is not already available.
+`readOneShot()` triggers, waits, reads, and restores the desired idle VBIAS
+state under one whole-operation deadline.
 
-`MAX31865Settings` is the decoded register snapshot used by the CLI:
+With a DRDY capability, the active-low pin is readiness-authoritative. A high
+level remains not ready after the maximum; the driver does not replace it with
+an elapsed guess. At/after that horizon it may read FAULT_STATUS once to expose
+a D2 ADC halt before a bounded wait otherwise returns `DrdyTimeout`. Without
+DRDY, the documented maximum plus a 1 ms clock-quantization guard and a D2
+status check form the readiness proof.
 
-- raw CONFIG register
-- decoded VBIAS, auto-convert, one-shot, fault-cycle, wire, and filter state
-- raw threshold ADC codes
-- threshold resistance and Celsius conversions
+`readSample()` deliberately reads the buffered RTD registers immediately. It
+can therefore return an older value while Ready and is rejected during an
+armed one-shot. Use the fresh paths for acquisition.
 
-## Conversion Helpers
+A successful sample has `FRAME_VALID` and `DATA_VALID`. A faulted RTD frame may
+commit frame and decoded-fault evidence while returning `DeviceFault`; its
+temperature is not marked data-valid. Optional channel and ready-timestamp
+metadata are supplied through `MAX31865ReadOptions`.
 
-- `MAX31865::codeToRatio(code)` converts the 15-bit ADC code to full-scale
-  ratio.
-- `codeToResistance(code)` converts ADC code to RTD resistance using the
-  configured reference resistor.
-- `resistanceToTemperature(ohms)` converts RTD resistance to Celsius using the
-  configured Callendar-Van Dusen coefficients.
-- `temperatureToResistance(celsius)` and `temperatureToCode(celsius)` convert
-  engineering thresholds back to register-friendly values.
+## Faults and thresholds
 
-The default coefficients are IEC 60751 platinum RTD constants. Use
-`setRtdParameters()` or `MAX31865BeginConfig::useCustomCoefficients` for custom
-platinum curves. The driver enforces the documented reference-resistor operating
-range of 350 ohm to 10 kohm and clamps SPI clock requests to the 5 MHz
-datasheet maximum.
+The typed API decodes high/low thresholds, REFIN high/low, RTDIN low, and
+over/undervoltage. Fresh fault cycles clear old latches first. A manual cycle
+waits 200 us for both internal step-1 phases, then at least `5 * external RC`,
+issues step 2, and allows its two internal comparisons to finish. Automatic
+fault detection is rejected before I/O when configured external RC is greater
+than 100 us.
 
-## Fault Handling
+Thresholds can be set/read as 15-bit code, resistance, or temperature. Values
+are encoded left-shifted in the two threshold registers. Threshold LSB D0 is
+documented don't-care; readback verification compares only its defined D7:D1.
+The register prose describes a high fault at or above the high threshold and a
+low fault at or below the low threshold. Do not build a safety boundary around
+a single threshold-code edge without hardware verification.
 
-The driver exposes both raw threshold registers and decoded fault bits:
+## Register diagnostics
 
-- `setFaultThresholdsRaw(low, high)`
-- `setFaultThresholdsResistance(lowOhms, highOhms)`
-- `setFaultThresholdsTemperature(lowC, highC)`
-- `readFaultStatus(status)`
-- `clearFaults()`
-- `runAutoFaultDetection(status)`
-- `runManualFaultDetection(status, settleDelayUs)`
+Validated raw access is Ready-only and is intended for diagnostics, not normal
+application control. CONFIG command bits must use typed operations.
+`restoreWritableDefaults()` writes documented writable POR values and clears
+faults; it is not a silicon reset.
 
-Threshold APIs accept the 15-bit RTD ADC code, not the shifted register word.
-The helper writes the correct register encoding.
+Reading RTD addresses 01h/02h is the documented DRDY-high acknowledgement.
+Consequently, `dumpRegisters()` consumes a pending readiness indication and is
+Ready-only. `readConfiguration()` avoids that side effect by reading CONFIG and
+threshold registers in separate transactions. `registerReadbackTest()` is
+destructive to one threshold byte during the test and restores/verifies the
+desired image before success.
 
-Faulted RTD samples are not returned as successful temperatures. `readSample()`
-and `readSingle()` read the fault-status register, update health counters, and
-return false with `FaultPresent` when the RTD fault bit is set.
+## Conversion helpers
 
-Fault-detection cycles are only allowed while continuous conversion is stopped.
-They leave the ADC in normally-off conversion mode, keep VBIAS on for stable
-post-cycle diagnostics, and enforce the configured VBIAS settle delay.
+All helpers return a status and preserve output on failure:
 
-## Register Diagnostics
+- `codeToRatio()` and `codeToResistance()`
+- `resistanceToCode()` and `resistanceToTemperature()`
+- `temperatureToResistance()` and `temperatureToCode()`
 
-Production application code should prefer typed methods, but bringup tools can
-use:
-
-- `readReg(addr, value)` and compact `readReg(addr)`
-- `readRegs(start, out, len)`
-- `writeReg(addr, value)`
-- `writeRegVerify(addr, value, readBack)`
-- `dumpRegisters(rows, max)`
-- `resetRegisters()`
-- `registerReadbackTest(readBack)`
-
-`writeRegVerify()` masks self-clearing CONFIG bits before comparing readback.
-`registerReadbackTest()` uses a threshold register and restores the original
-value.
+The IEC 60751 forward function uses the C coefficient below 0 degrees C and the
+A/B branch at and above 0 degrees C. Resistance inversion uses a fixed-count
+bisection over the configured finite domain; it has no unbounded iteration.

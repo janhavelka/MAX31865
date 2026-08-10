@@ -1,7 +1,7 @@
 {
   "name": "MAX31865",
-  "version": "0.1.2",
-  "description": "MAX31865 RTD-to-digital converter driver for ESP32 Arduino with diagnostics and bringup CLI",
+  "version": "1.0.0",
+  "description": "Framework-neutral MAX31865 RTD-to-digital converter core with an Arduino backend",
   "keywords": [
     "max31865",
     "rtd",
@@ -10,7 +10,9 @@
     "temperature",
     "spi",
     "arduino",
-    "esp32"
+    "esp32",
+    "maxim",
+    "analog-devices"
   ],
   "authors": [
     {
@@ -27,16 +29,43 @@
   "license": "MIT",
   "homepage": "https://github.com/janhavelka/MAX31865",
   "frameworks": [
-    "arduino"
+    "arduino",
+    "espidf"
   ],
   "platforms": [
     "espressif32"
   ],
   "headers": [
-    "MAX31865/MAX31865.h"
+    "MAX31865/MAX31865.h",
+    "MAX31865/Transport.h"
   ],
   "build": {
     "includeDir": "include",
     "srcDir": "src"
+  },
+  "export": {
+    "exclude": [
+      ".git*",
+      ".github",
+      ".pio",
+      ".vscode",
+      "*.o",
+      "*.obj",
+      "*.pdf",
+      "*.tar.gz",
+      "AGENTS.md",
+      "CONTRIBUTING.md",
+      "Doxyfile",
+      "SECURITY.md",
+      "build",
+      "cmake-build-*",
+      "compile_commands.json",
+      "docs",
+      "hil_logs",
+      "platformio.ini",
+      "scripts",
+      "test",
+      "tools"
+    ]
   }
 }

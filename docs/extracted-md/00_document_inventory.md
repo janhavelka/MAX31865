@@ -1,5 +1,17 @@
 # MAX31865 PDF Document Inventory
 
+## Current Online Source Check
+
+The official Analog Devices [MAX31865 product page](https://www.analog.com/en/products/max31865.html)
+was checked on 2026-08-07 and still served the
+[Rev. 3 data sheet](https://www.analog.com/media/en/technical-documentation/data-sheets/MAX31865.pdf)
+as the current functional specification. No separate functional errata was
+listed in the checked official source set. ADI notifications
+[2571B](https://www.analog.com/media/en/pcn/pcn_2571b.pdf) and
+[2571D](https://www.analog.com/media/en/pcn/pcn_2571d.pdf) describe 2026 package
+marking/labeling changes with no fit, form, function, quality, or reliability
+impact. See `docs/DATASHEET_AUDIT.md` for the implementation audit.
+
 ## Source Set
 
 Only PDF files stored under `docs/source-pdfs/` were used. Non-PDF vendor/support

@@ -1,7 +1,11 @@
-# Security Policy
+# Security policy
 
-This repository contains embedded sensor-driver code and does not process
-network input directly.
+Report security or safety-impacting defects privately to `info@thymos.cz`.
+Include the affected version/commit, hardware and wiring when relevant,
+reproduction steps, observed/expected behavior, and potential impact. Avoid
+publishing exploitable details before maintainers have had a reasonable chance
+to investigate and coordinate a fix.
 
-Report security issues privately to info@thymos.cz. Include affected version,
-reproduction details, and expected impact.
+This driver does not implement network input or machine-safety policy. Sensor
+faults, stale data, transport failures, and offline state must still be mapped
+to fail-safe application behavior by the integrating firmware.
