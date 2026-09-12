@@ -61,7 +61,8 @@ EXAMPLE_PATH           = examples/01_basic_bringup \
 PREDEFINED             = DOXYGEN=1
 INCLUDE_PATH           = test/stubs
 
-USE_MDFILE_AS_MAINPAGE = README.md
+# A path avoids matching every nested README.md by basename in Doxygen 1.9.8.
+USE_MDFILE_AS_MAINPAGE = ./README.md
 FULL_PATH_NAMES        = NO
 SORT_MEMBER_DOCS       = YES
 SORT_BRIEF_DOCS        = YES

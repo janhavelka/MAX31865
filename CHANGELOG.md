@@ -12,6 +12,14 @@ validated on real MAX31865 hardware. These changes remain unreleased until the
 required HIL matrix passes, its real-hardware results are accepted, and
 publication is explicitly authorized.
 
+### Fixed
+
+- Documentation CI installs Graphviz for the generated diagrams and selects
+  the root README by path, so nested README files do not become duplicate
+  main pages in Doxygen 1.9.8. Warning checks remain enabled.
+- Removed an extra trailing blank line in `Protocol.h` that failed the
+  committed-tree whitespace check.
+
 ### Added
 
 - Framework-neutral, noncopyable synchronous `MAX31865` driver with borrowed

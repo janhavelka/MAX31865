@@ -72,11 +72,12 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install Doxygen
+      - name: Install Doxygen and Graphviz
         run: |
           sudo apt-get update
-          sudo apt-get install --yes doxygen=1.9.8+ds-2build5
+          sudo apt-get install --yes doxygen=1.9.8+ds-2build5 graphviz
           test "$(doxygen --version)" = "1.9.8"
+          dot -V
 
       - name: Build warning-clean public documentation
         run: doxygen Doxyfile

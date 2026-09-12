@@ -2,6 +2,9 @@
 
 ## Static and native gates
 
+Install Doxygen and Graphviz (`dot`) before generating the documentation.
+CI uses Doxygen 1.9.8 and treats documentation warnings as errors.
+
 ```bash
 python scripts/generate_version.py --check
 python tools/check_transport_contract.py

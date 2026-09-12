@@ -70,4 +70,3 @@ MAX31865Status max31865EncodeThreshold(uint16_t code, uint8_t out[2]);
 MAX31865Status max31865DecodeThreshold(
     const uint8_t bytes[2],
     uint16_t &code);
-
