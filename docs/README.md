@@ -9,6 +9,7 @@
 - [ESP-IDF callback integration](ESP_IDF.md)
 - [Hardware bringup](HARDWARE_BRINGUP.md)
 - [Data-sheet audit](DATASHEET_AUDIT.md)
+- [Retained branch review](RETAINED_BRANCH_AUDIT.md)
 - [Testing](TESTING.md)
 - [Known limitations](KNOWN_LIMITATIONS.md)
 - [Repository contract](repository-contract.md)

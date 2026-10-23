@@ -33,6 +33,7 @@ publication is explicitly authorized.
 - <a href="https://github.com/janhavelka/MAX31865/blob/main/docs/ESP_IDF.md">ESP-IDF callback integration</a>
 - <a href="https://github.com/janhavelka/MAX31865/blob/main/docs/HARDWARE_BRINGUP.md">Hardware bringup</a>
 - <a href="https://github.com/janhavelka/MAX31865/blob/main/docs/DATASHEET_AUDIT.md">Data-sheet audit</a>
+- <a href="https://github.com/janhavelka/MAX31865/blob/main/docs/RETAINED_BRANCH_AUDIT.md">Retained branch review</a>
 - <a href="https://github.com/janhavelka/MAX31865/blob/main/docs/TESTING.md">Testing</a>
 - <a href="https://github.com/janhavelka/MAX31865/blob/main/docs/KNOWN_LIMITATIONS.md">Known limitations</a>
 
