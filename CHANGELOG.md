@@ -22,6 +22,8 @@ publication is explicitly authorized.
 
 ### Added
 
+- Ordered implementation prompts for a future native ESP-IDF example adapter,
+  application and CI/package checks; implementation remains pending.
 - Framework-neutral, noncopyable synchronous `MAX31865` driver with borrowed
   `MAX31865Transport` callbacks and zero-I/O construction, destruction, and
   `end()`.

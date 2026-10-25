@@ -92,6 +92,10 @@ The old adapter is not a ready-made implementation for R1:
 
 ## Remaining actionable work
 
+The [implementation prompt set](prompts/README.md) turns R1's deliberate
+native-integration scope expansion into two ordered software tasks. These
+tasks are NOT IMPLEMENTED; R2 remains separate hardware qualification.
+
 ### R1 - Conditional: a maintained native ESP-IDF integration
 
 Owner: consuming firmware and library maintainer. Priority is medium only if
