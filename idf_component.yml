@@ -1,6 +1,7 @@
 version: "1.0.0"
 description: Framework-neutral MAX31865 RTD-to-digital converter core with application-supplied transport callbacks
 url: https://github.com/janhavelka/MAX31865
+repository: "https://github.com/janhavelka/MAX31865.git"
 license: MIT
 maintainers:
   - "Jan Havelka (THYMOS Solution s.r.o.) <info@thymos.cz>"
@@ -20,6 +21,7 @@ files:
     - "*.pdf"
     - "*.tar.gz"
     - "AGENTS.md"
+    - "CLAUDE.md"
     - "CONTRIBUTING.md"
     - "Doxyfile"
     - "SECURITY.md"

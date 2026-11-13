@@ -75,6 +75,7 @@ REQUIRED_EXPORT_EXCLUSIONS = {
     "*.pdf",
     "*.tar.gz",
     "AGENTS.md",
+    "CLAUDE.md",
     "CONTRIBUTING.md",
     "Doxyfile",
     "SECURITY.md",

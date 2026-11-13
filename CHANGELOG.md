@@ -14,6 +14,10 @@ publication is explicitly authorized.
 
 ### Fixed
 
+- Package payload excludes `CLAUDE.md` (agent guidance, like `AGENTS.md`) from
+  the PlatformIO export and ESP-IDF component archive, so the exact-archive
+  check passes again.
+
 - Documentation CI installs Graphviz for the generated diagrams and selects
   the root README by path, so nested README files do not become duplicate
   main pages in Doxygen 1.9.8. Warning checks remain enabled.
