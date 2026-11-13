@@ -54,6 +54,8 @@ publication is explicitly authorized.
 
 ### Changed
 
+- Unified author, copyright and contact metadata: THYMOS Solution s.r.o.,
+  Jan Havelka, info@thymos.cz.
 - SPI host configuration, pins, task ownership, serialization, retry policy,
   logging, persistence, and machine safety are application responsibilities;
   the core owns only bounded chip-level transactions and state.
