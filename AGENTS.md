@@ -139,6 +139,11 @@ idf_component.yml          Core-only ESP-IDF component metadata
   `MAX31865_Protocol.cpp`; it must not require peripheral or RTOS components.
 - Repository examples use Arduino, advance cooperative work from `loop()`, and
   build through exact-pinned PlatformIO environments.
+- Planned change: on 2026-11-16 the owner elected native ESP-IDF support (a
+  maintained native example with an example-owned SPI adapter and the shared
+  diagnostic CLI). The ordered set in `docs/prompts/` describes it; executing
+  that set authorizes the AGENTS, README, docs, checker/guard, package and CI
+  changes it lists. Until it lands, the rules above describe the current tree.
 
 ## Status and health
 

@@ -58,6 +58,11 @@ publication is explicitly authorized.
 
 ### Changed
 
+- Revised the native ESP-IDF prompts in `docs/prompts/` for the owner's
+  2026-11-16 election: ESP-IDF 6.0.1 for ESP32-S3/S2, `examples/esp_idf/basic`
+  with the shared diagnostic CLI, the polled dedicated-host SPI timeout
+  decision, and one remote-CI checkpoint in prompt 02. Implementation remains
+  pending.
 - Unified author, copyright and contact metadata: THYMOS Solution s.r.o.,
   Jan Havelka, info@thymos.cz.
 - SPI host configuration, pins, task ownership, serialization, retry policy,
