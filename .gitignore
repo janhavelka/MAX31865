@@ -4,6 +4,8 @@
 .vscode/launch.json
 .vscode/ipch/
 docs/doxygen/
+# Older branches generate Doxygen HTML here.
+/docs/generated/html/
 __pycache__/
 
 # ESP-IDF build output that idf.py writes next to any example or project.
