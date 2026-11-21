@@ -62,7 +62,7 @@ it; record that source and the consequence.
 - **5 CLI.** Full command parity through the one framework-neutral engine
   `examples/06_diagnostic_cli/Max31865Cli.cpp`, used by both shells. Fix its
   Arduino-specific string. `tools/check_cli_contract.py` pins both shells.
-- **6 SPI timeout semantics** (same text as ADS1261_ESP32):
+- **6 SPI timeout semantics** (same text as ADS1261):
 
   > ESP-IDF 6.0.1 `spi_device_acquire_bus` and `spi_device_polling_start`
   > accept only `portMAX_DELAY`

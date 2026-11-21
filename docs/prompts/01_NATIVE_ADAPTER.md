@@ -91,7 +91,7 @@ or loosen a check of shipped behaviour.
   `examples/esp_idf/basic/components/INA3221/CMakeLists.txt` and SCD41
   `examples/idf/basic/components/SCD41/CMakeLists.txt:1-10` (fixed-name
   wrapper); OPT4001 `examples/esp_idf/basic/{CMakeLists.txt,main/CMakeLists.txt,sdkconfig.defaults}`
-  (minimal project); ADS1261_ESP32 for the shared SPI decision text.
+  (minimal project); ADS1261 for the shared SPI decision text.
 - Historical `examples/esp_idf/basic/main/Max31865IdfSpi.cpp` and `main.cpp`
   only through `git show 5263d90:<path>`, as a list of what not to copy
   (`docs/RETAINED_BRANCH_AUDIT.md:69-91`).
@@ -139,7 +139,7 @@ or loosen a check of shipped behaviour.
 5. **Time.** `nowMs`/`nowUs` from `esp_timer_get_time()` modulo 2^32;
    `sleepMs` loops `vTaskDelay` (at least one tick; ms to ticks without
    overflow) until `nowMs` shows the full requested time, with a bounded
-   attempt count of 8 (as ADS1261_ESP32
+   attempt count of 8 (as ADS1261
    `src/platform/arduino/ADS1261ArduinoBackend.cpp:8-9,295-305`); `delayUs`
    through `esp_rom_delay_us`.
    No allocation, logging or task creation in callbacks; no rebinding of live
